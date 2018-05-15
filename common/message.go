@@ -34,8 +34,8 @@ type Part struct {
 type Msg struct {
 	Date          time.Time
 	Subject       string
-	From, ReplyTo *mail.Address
-	To, Cc, Bcc   []*mail.Address
+	From, ReplyTo mail.Address
+	To, Cc, Bcc   []mail.Address
 	Misc          mail.Header
 
 	Parts []Part
@@ -60,13 +60,31 @@ func ReadMsg(in io.Reader) (*Msg, error) {
 }
 
 func readHeaders(out *Msg, in *mail.Message) error {
+	convAddrList := func(in []*mail.Address, err error) ([]mail.Address, error) {
+		if err != nil {
+			return nil, err
+		}
+
+		res := make([]mail.Address, 0)
+		for _, a := range in {
+			res = append(res, *a)
+		}
+		return res, nil
+	}
+
 	out.Date, _ = mail.ParseDate(in.Header.Get("Date"))
 	out.Subject = in.Header.Get("Subject")
-	out.From, _ = mail.ParseAddress(in.Header.Get("From"))
-	out.ReplyTo, _ = mail.ParseAddress(in.Header.Get("Reply-To"))
-	out.To, _ = mail.ParseAddressList(in.Header.Get("To"))
-	out.Cc, _ = mail.ParseAddressList(in.Header.Get("Cc"))
-	out.Bcc, _ = mail.ParseAddressList(in.Header.Get("Bcc"))
+	from, _ := mail.ParseAddress(in.Header.Get("From"))
+	if from != nil {
+		out.From = *from
+	}
+	replyTo, _ := mail.ParseAddress(in.Header.Get("Reply-To"))
+	if replyTo != nil {
+		out.ReplyTo = *replyTo
+	}
+	out.To, _ = convAddrList(mail.ParseAddressList(in.Header.Get("To")))
+	out.Cc, _ = convAddrList(mail.ParseAddressList(in.Header.Get("Cc")))
+	out.Bcc, _ = convAddrList(mail.ParseAddressList(in.Header.Get("Bcc")))
 	delete(in.Header, "Date")
 	delete(in.Header, "Subject")
 	delete(in.Header, "From")
