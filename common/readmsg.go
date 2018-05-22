@@ -132,12 +132,15 @@ func readMultipart(out *Msg, in *mail.Message, params map[string]string) error {
 			if err != nil {
 				return err
 			}
+		} else {
+			res.Body = rawBody
 		}
 
 		// Consume already-used-fields.
 		delete(part.Header, "Content-Transfer-Encoding")
 		delete(part.Header, "Content-Type")
 		// ...and copy rest to the Misc map.
+		res.Misc = mail.Header{}
 		for k, v := range part.Header {
 			res.Misc[k] = v
 		}

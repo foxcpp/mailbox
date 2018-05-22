@@ -27,14 +27,16 @@ func MarshalDate(d time.Time) string {
 	return d.Format("Mon, 2 Jan 2006 15:04:05 -0700")
 }
 
-// WriteMsg writes out message headers + body in format suitable for
+// Write writes out message headers + body in format suitable for
 // transmission using SMTP protocol.
 //
 // Transfer encoding is picked depending on "nature" of the body of each part.
 // If part contains only ASCII printabe characters it will be written as is, if
 // few bytes (<25%) with 8 bit set then QP encoding will be used,
 // otherwise Base-64 will be used.
-func (m *Msg) WriteMsg(out io.Writer) error {
+func (m *Msg) Write(out io.Writer) error {
+	// TODO: "Defragment" code, this crap is unreadable! Multipart/regular
+	// messages processing is intermixed.
 	allHdrs := mail.Header{}
 	if len(m.From.Address) != 0 {
 		allHdrs["From"] = []string{MarshalAddress(m.From)}
@@ -58,11 +60,14 @@ func (m *Msg) WriteMsg(out io.Writer) error {
 		allHdrs["Date"] = []string{MarshalDate(m.Date)}
 	}
 	allHdrs["MIME-Version"] = []string{"1.0"}
+	// Used with multipart messages.
+	var boundary string
 	if _, prs := allHdrs["Content-Type"]; !prs {
 		if len(m.Parts) == 1 {
 			allHdrs["Content-Type"] = []string{"text/plain; charset=utf-8"}
 		} else {
-			allHdrs["Content-Type"] = []string{"multipart/mixed"}
+			boundary = randomBoundary()
+			allHdrs["Content-Type"] = []string{"multipart/mixed; boundary=" + boundary}
 		}
 	}
 	var enc Encoding
@@ -79,7 +84,7 @@ func (m *Msg) WriteMsg(out io.Writer) error {
 
 	var err error
 	if len(m.Parts) > 1 {
-		err = writeMultipart(m, out)
+		err = writeMultipart(m, boundary, out)
 	} else {
 		encBody := make([]byte, enc.EncodedLen(len(m.Parts[0].Body)))
 		enc.Encode(encBody, m.Parts[0].Body)
@@ -92,9 +97,9 @@ func (m *Msg) WriteMsg(out io.Writer) error {
 	return nil
 }
 
-func writeMultipart(m *Msg, out io.Writer) error {
+func writeMultipart(m *Msg, boundary string, out io.Writer) error {
 	outWrap := multipart.NewWriter(out)
-	outWrap.SetBoundary(randomBoundary())
+	outWrap.SetBoundary(boundary)
 
 	for _, part := range m.Parts {
 		allHdrs := mail.Header{}
@@ -105,7 +110,7 @@ func writeMultipart(m *Msg, out io.Writer) error {
 			allHdrs[k] = v
 		}
 
-		partW, err := outWrap.CreatePart(textproto.MIMEHeader(part.Misc))
+		partW, err := outWrap.CreatePart(textproto.MIMEHeader(allHdrs))
 		if err != nil {
 			return err
 		}
