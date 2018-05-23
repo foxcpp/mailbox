@@ -5,6 +5,8 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+
+	message "github.com/emersion/go-message"
 )
 
 type BodyType struct {
@@ -14,7 +16,7 @@ type BodyType struct {
 
 type Part struct {
 	Type BodyType
-	Misc mail.Header
+	Misc message.Header
 	Body []byte
 }
 
@@ -29,7 +31,7 @@ type Msg struct {
 	Subject       string
 	From, ReplyTo mail.Address
 	To, Cc, Bcc   []mail.Address
-	Misc          mail.Header
+	Misc          message.Header
 
 	Parts []Part
 }
