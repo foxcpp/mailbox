@@ -4,11 +4,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
-	"net/smtp"
 	"strconv"
 	"strings"
 
 	sasl "github.com/emersion/go-sasl"
+	smtp "github.com/emersion/go-smtp"
 	"github.com/foxcpp/gopher-mail/common"
 )
 
@@ -65,17 +65,14 @@ func Connect(target common.ServConfig) (*Client, error) {
 
 // Auth authenticates using specified configuration if possible.
 func (c *Client) Auth(conf common.ServConfig) error {
-	if ok, kinds := c.Extension("AUTH"); ok {
+	cl := (*smtp.Client)(c)
+	if ok, kinds := cl.Extension("AUTH"); ok {
 		if strings.Contains(kinds, "PLAIN") && conf.User != "" {
-			if err := c.Auth(sasl.NewPlainClient("", target.User, target.Pass)); err != nil {
-				return nil, err
-			}
+			return cl.Auth(sasl.NewPlainClient("", conf.User, conf.Pass))
 		} else if strings.Contains(kinds, "ANONYMOUS") {
-			if err := c.Auth(sasl.NewAnonymousClient("See_IP")); err != nil {
-				return nil, err
-			}
+			return cl.Auth(sasl.NewAnonymousClient(""))
 		} else {
-			return errors.New("auth: not supported")
+			return errors.New("auth: no supported auth method found")
 		}
 	} else {
 		return errors.New("auth: not supported")
