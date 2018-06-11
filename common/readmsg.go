@@ -27,17 +27,6 @@ func ReadMsg(in io.Reader) (*Msg, error) {
 }
 
 func readHeaders(res *Msg, m *message.Entity) error {
-	convAddrList := func(in []*mail.Address, err error) ([]mail.Address, error) {
-		if err != nil {
-			return nil, err
-		}
-
-		res := make([]mail.Address, 0)
-		for _, a := range in {
-			res = append(res, *a)
-		}
-		return res, nil
-	}
 	res.Subject = m.Header.Get("Subject")
 	res.Date, _ = mail.ParseDate(m.Header.Get("Date"))
 
@@ -49,9 +38,9 @@ func readHeaders(res *Msg, m *message.Entity) error {
 	if replyTo != nil {
 		res.ReplyTo = *replyTo
 	}
-	res.To, _ = convAddrList(mail.ParseAddressList(m.Header.Get("To")))
-	res.Cc, _ = convAddrList(mail.ParseAddressList(m.Header.Get("Cc")))
-	res.Bcc, _ = convAddrList(mail.ParseAddressList(m.Header.Get("Bcc")))
+	res.To, _ = ConvertAddrList(mail.ParseAddressList(m.Header.Get("To")))
+	res.Cc, _ = ConvertAddrList(mail.ParseAddressList(m.Header.Get("Cc")))
+	res.Bcc, _ = ConvertAddrList(mail.ParseAddressList(m.Header.Get("Bcc")))
 
 	delete(m.Header, "Date")
 	delete(m.Header, "Subject")

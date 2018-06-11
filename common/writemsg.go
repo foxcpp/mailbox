@@ -62,6 +62,14 @@ func (m *Msg) Write(out io.Writer) error {
 		allHdrs[k] = v
 	}
 
+	if len(m.Parts) == 0 {
+		w, err := message.CreateWriter(out, allHdrs)
+		if err != nil {
+			return err
+		}
+		return w.Close()
+	}
+
 	var err error
 	if len(m.Parts) == 1 {
 		err = writeRegular(m, allHdrs, out)
@@ -81,6 +89,7 @@ func writeRegular(m *Msg, hdrs message.Header, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	w.Write(m.Parts[0].Body)
 	return w.Close()
 }
 
