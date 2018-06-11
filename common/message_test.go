@@ -70,8 +70,8 @@ Test! Test! Test! Test! ` + "\u5730\u9F20"
 			"X-Customheader": []string{"foo"},
 		},
 		Parts: []Part{
-			Part{
-				BodyType{"text/plain", map[string]string{"charset": "utf-8"}},
+			BodyType: Part{
+				ParametrizedHeader{"text/plain", map[string]string{"charset": "utf-8"}},
 				mail.Header{},
 				[]byte("Test! Test! Test! Test! \u5730\u9F20"),
 			},

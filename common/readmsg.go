@@ -66,7 +66,7 @@ func readBody(res *Msg, m *message.Entity) error {
 				return err
 			}
 
-			outPart.Type.T, outPart.Type.Params, err = part.Header.ContentType()
+			outPart.Type.Value, outPart.Type.Params, err = part.Header.ContentType()
 			outPart.Body, err = ioutil.ReadAll(part.Body)
 			if err != nil {
 				return err
@@ -80,7 +80,7 @@ func readBody(res *Msg, m *message.Entity) error {
 		// Regular message.
 		outPart := Part{}
 		var err error
-		outPart.Type.T, outPart.Type.Params, err = m.Header.ContentType()
+		outPart.Type.Value, outPart.Type.Params, err = m.Header.ContentType()
 		outPart.Body, err = ioutil.ReadAll(m.Body)
 		if err != nil {
 			return err

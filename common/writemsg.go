@@ -105,6 +105,18 @@ func writeMultipart(m *Msg, hdrs message.Header, out io.Writer) error {
 
 	for _, part := range m.Parts {
 		partHdrs := message.Header{}
+		if part.Type.Value != "" {
+			partHdrs.Set("Content-Type", part.Type.String())
+		}
+		if part.Disposition.Value != "" {
+			partHdrs.Set("Content-Disposition", part.Type.String())
+		}
+		if part.Language != "" {
+			partHdrs.Set("Content-Language", part.Language)
+		}
+		if part.URI != "" {
+			partHdrs.Set("Content-Location", part.URI)
+		}
 		for k, v := range part.Misc {
 			partHdrs[k] = v
 		}

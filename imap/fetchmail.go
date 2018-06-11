@@ -51,7 +51,7 @@ func (c *Client) FetchPartialMail(dir string, uid uint32, filter func(string, st
 		msgBody := <-out
 		for _, v := range msgBody.Body {
 			part := bodyStructToPart(*msgStruct.BodyStructure)
-			part.Type = common.BodyType{
+			part.Type = common.ParametrizedHeader{
 				msgStruct.BodyStructure.MIMEType + "/" + msgStruct.BodyStructure.MIMESubType,
 				msgStruct.BodyStructure.Params,
 			}
@@ -78,7 +78,7 @@ func (c *Client) DownloadPart(uid uint32, partIndex int) (*common.Part, error) {
 	}
 
 	res := common.Part{}
-	res.Type.T, res.Type.Params, err = hdr.ContentType()
+	res.Type.Value, res.Type.Params, err = hdr.ContentType()
 	if err != nil {
 		return nil, err
 	}

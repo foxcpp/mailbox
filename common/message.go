@@ -9,15 +9,18 @@ import (
 	message "github.com/emersion/go-message"
 )
 
-type BodyType struct {
-	T      string
+type ParametrizedHeader struct {
+	Value  string
 	Params map[string]string
 }
 
 type Part struct {
-	Type BodyType
-	Misc message.Header
-	Body []byte
+	Type        ParametrizedHeader
+	Disposition ParametrizedHeader
+	Language    string
+	URI         string
+	Misc        message.Header
+	Body        []byte
 }
 
 // Msg struct represents a parsed E-Mail message.
@@ -36,10 +39,10 @@ type Msg struct {
 	Parts []Part
 }
 
-func (bt BodyType) String() string {
+func (ph ParametrizedHeader) String() string {
 	// TODO: Is it correct?
-	parts := []string{bt.T}
-	for name, value := range bt.Params {
+	parts := []string{ph.Value}
+	for name, value := range ph.Params {
 		parts = append(parts, fmt.Sprintf("%v=%v", name, value))
 	}
 	return strings.Join(parts, "; ")
