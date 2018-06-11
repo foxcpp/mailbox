@@ -6,7 +6,7 @@ import (
 
 	eimap "github.com/emersion/go-imap"
 	message "github.com/emersion/go-message"
-	"github.com/foxcpp/gopher-mail/common"
+	"github.com/foxcpp/mailbox/proto/common"
 )
 
 // FetchPartialMail requests text parts of message with specified uid from specified directory.

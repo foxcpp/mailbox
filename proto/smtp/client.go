@@ -9,7 +9,7 @@ import (
 
 	sasl "github.com/emersion/go-sasl"
 	smtp "github.com/emersion/go-smtp"
-	"github.com/foxcpp/gopher-mail/common"
+	"github.com/foxcpp/mailbox/proto/common"
 )
 
 type Client smtp.Client

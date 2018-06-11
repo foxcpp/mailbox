@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	eimap "github.com/emersion/go-imap"
-	"github.com/foxcpp/gopher-mail/common"
+	"github.com/foxcpp/mailbox/proto/common"
 )
 
 type MessageInfo struct {

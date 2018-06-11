@@ -2,7 +2,7 @@ package smtp
 
 import (
 	"github.com/emersion/go-smtp"
-	"github.com/foxcpp/gopher-mail/common"
+	"github.com/foxcpp/mailbox/proto/common"
 )
 
 func (c *Client) Send(msg common.Msg) error {

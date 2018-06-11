@@ -5,7 +5,7 @@ import (
 	"time"
 
 	eimap "github.com/emersion/go-imap"
-	"github.com/foxcpp/gopher-mail/common"
+	"github.com/foxcpp/mailbox/proto/common"
 )
 
 // CopyTo copies all specified messages from one directory to another.

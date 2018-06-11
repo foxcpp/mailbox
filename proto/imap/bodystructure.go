@@ -3,7 +3,7 @@ package imap
 import (
 	imap "github.com/emersion/go-imap"
 	message "github.com/emersion/go-message"
-	"github.com/foxcpp/gopher-mail/common"
+	"github.com/foxcpp/mailbox/proto/common"
 )
 
 // bodyStructToPart converts information about body part to common.Part used in
