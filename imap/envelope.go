@@ -9,7 +9,7 @@ import (
 )
 
 type MessageInfo struct {
-	Uid                                    uint32
+	UID                                    uint32
 	Msg                                    common.Msg
 	Read, Answered, Deleted, Draft, Recent bool
 	CustomFlags                            []string
@@ -25,7 +25,7 @@ func convertAddrList(in []*eimap.Address) []mail.Address {
 
 func MessageToInfo(msg *eimap.Message) MessageInfo {
 	res := MessageInfo{}
-	res.Uid = msg.Uid
+	res.UID = msg.Uid
 	res.Msg.Date = msg.Envelope.Date
 	res.Msg.Subject = msg.Envelope.Subject
 	res.Msg.From = mail.Address{msg.Envelope.From[0].PersonalName, msg.Envelope.From[0].MailboxName + "@" + msg.Envelope.From[0].HostName}

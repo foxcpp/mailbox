@@ -38,9 +38,8 @@ func starttlsHandshake(conn net.Conn, hostname string) (*client.Client, error) {
 
 	if err := c.StartTLS(conf); err != nil {
 		return nil, err
-	} else {
-		return c, nil
 	}
+	return c, nil
 }
 
 func Connect(target common.ServConfig) (*Client, error) {

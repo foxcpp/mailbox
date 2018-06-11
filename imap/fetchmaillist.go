@@ -30,9 +30,8 @@ func (c *Client) FetchMaillist(dir string) ([]MessageInfo, error) {
 func min(a, b uint32) uint32 {
 	if a < b {
 		return a
-	} else {
-		return b
 	}
+	return b
 }
 
 func (c *Client) FetchPartialMaillist(dir string, count, offset uint32) ([]MessageInfo, error) {

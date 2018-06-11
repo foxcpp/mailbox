@@ -9,7 +9,7 @@ import (
 	"github.com/foxcpp/gopher-mail/common"
 )
 
-// FetchMailText requests text parts of message with specified uid from specified directory.
+// FetchPartialMail requests text parts of message with specified uid from specified directory.
 // Returned Msg object will contain message headers, text/plain, text/html parts and information (!)
 // about other parts (body slice will be nil).
 func (c *Client) FetchPartialMail(dir string, uid uint32, filter func(string, string) bool) (*common.Msg, error) {
