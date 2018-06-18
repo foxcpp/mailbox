@@ -7,14 +7,14 @@ import (
 	"github.com/foxcpp/mailbox/proto/imap"
 )
 
-func (c *Client) GetDirs(accountId string) ([]string, error) {
+func (c *Client) GetDirs(accountId string) (StrSet, error) {
 	c.caches[accountId].lock.Lock()
 	defer c.caches[accountId].lock.Unlock()
 
-	list := c.caches[accountId].dirs
-	if list != nil {
+	set := c.caches[accountId].dirs
+	if set != nil {
 		// Cache hit!
-		return list, nil
+		return set, nil
 	}
 
 	Logger.Printf("Cache miss in GetDirs for %v\n", accountId)
@@ -27,12 +27,13 @@ func (c *Client) GetDirs(accountId string) ([]string, error) {
 	}
 
 	c.imapDirSep = separator
-	for i, name := range list {
-		list[i] = c.normalizeDirName(name)
+	resSet := make(StrSet)
+	for _, name := range list {
+		resSet.Add(c.normalizeDirName(name))
 	}
 
-	c.caches[accountId].dirs = list
-	return list, nil
+	c.caches[accountId].dirs = resSet
+	return resSet, nil
 }
 
 // Normalized dir name - directory name with all server-defined path

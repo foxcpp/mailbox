@@ -12,7 +12,7 @@ import (
 )
 
 type cache struct {
-	dirs          []string
+	dirs          StrSet
 	unreadCounts  map[string]uint
 	dirsStamp     time.Time
 	messagesByUid map[uint32]*imap.MessageInfo
@@ -125,7 +125,7 @@ func (c *Client) initCaches(accountId string) {
 	// This way we will be able really speed up things.
 
 	c.caches[accountId] = &cache{
-		dirs:          []string{},
+		dirs:          make(StrSet),
 		unreadCounts:  make(map[string]uint),
 		dirsStamp:     time.Now(),
 		messagesByUid: make(map[uint32]*imap.MessageInfo),
@@ -189,12 +189,12 @@ func (c *Client) prefetchData(accountId string) error {
 	if err != nil {
 		return err
 	}
-	Logger.Println("Directories:", c.caches[accountId].dirs)
+	Logger.Println("Directories:", c.caches[accountId].dirs.List())
 
 	Logger.Println("Prefetching directories status...")
 	// Even though we ignore returned values - caches will
 	// be populated with needed data.
-	for _, dir := range c.caches[accountId].dirs {
+	for _, dir := range c.caches[accountId].dirs.List() {
 		Logger.Println("Looking into", dir+"...")
 		count, err := c.GetUnreadCount(accountId, dir)
 		if err != nil {
