@@ -22,3 +22,12 @@ func (c *Client) DirList() ([]string, error) {
 	}
 	return res, <-done
 }
+
+func (c *Client) DirStatus(dirName string) (total uint, unread uint, err error) {
+	status, err := c.cl.Select(dirName, true)
+	if err != nil {
+		return 0, 0, nil
+	}
+
+	return uint(status.Messages), uint(status.Unseen), nil
+}

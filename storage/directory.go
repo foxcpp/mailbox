@@ -24,5 +24,6 @@ func GetDirectory() string {
 			return filepath.Join(cfgHome, "mailbox")
 		}
 	}
+
 	return res
 }
