@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	sasl "github.com/emersion/go-sasl"
 	smtp "github.com/emersion/go-smtp"
@@ -45,6 +46,9 @@ func Connect(target common.ServConfig) (*Client, error) {
 		return nil, err
 	}
 
+	// Connection must complete in 30 seconds.
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+
 	var c *smtp.Client
 	if target.ConnType == common.TLS {
 		var err error
@@ -59,6 +63,10 @@ func Connect(target common.ServConfig) (*Client, error) {
 			return nil, err
 		}
 	}
+
+	// Reset deadline.
+	conn.SetDeadline(time.Time{})
+	// TODO: Timeout for other I/O.
 
 	return (*Client)(c), nil
 }

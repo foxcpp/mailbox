@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"time"
 
 	eimap "github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
@@ -50,6 +51,9 @@ func Connect(target common.ServConfig) (*Client, error) {
 		return nil, err
 	}
 
+	// Connection must complete in 30 seconds.
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+
 	var c *client.Client
 	if target.ConnType == common.TLS {
 		var err error
@@ -64,6 +68,12 @@ func Connect(target common.ServConfig) (*Client, error) {
 			return nil, err
 		}
 	}
+
+	// Reset deadline.
+	conn.SetDeadline(time.Time{})
+
+	// 30 timeout for any I/O.
+	c.Timeout = 30 * time.Second
 
 	return &Client{cl: c}, nil
 }
