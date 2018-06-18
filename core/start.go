@@ -38,6 +38,8 @@ type Client struct {
 
 	watcherStopSignal      chan bool
 	cacheCleanerStopSignal chan bool
+
+	imapDirSep string
 }
 
 type AccountError struct {

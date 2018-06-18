@@ -4,23 +4,19 @@ import (
 	imap "github.com/emersion/go-imap"
 )
 
-func (c *Client) DirList() ([]string, error) {
+func (c *Client) DirList() (delimiter string, list []string, err error) {
 	mailboxes := make(chan *imap.MailboxInfo, 32)
 	done := make(chan error, 1)
 	go func() {
 		done <- c.cl.List("", "*", mailboxes)
 	}()
 
-	if c.seenMailboxes == nil {
-		c.seenMailboxes = make(map[string]imap.MailboxInfo)
-	}
-
 	res := []string{}
 	for m := range mailboxes {
 		res = append(res, m.Name)
-		c.seenMailboxes[m.Name] = *m
+		delimiter = m.Delimiter
 	}
-	return res, <-done
+	return delimiter, res, <-done
 }
 
 func (c *Client) DirStatus(dirName string) (total uint, unread uint, err error) {
@@ -28,6 +24,7 @@ func (c *Client) DirStatus(dirName string) (total uint, unread uint, err error) 
 	if err != nil {
 		return 0, 0, nil
 	}
+	defer c.cl.Close()
 
 	return uint(status.Messages), uint(status.Unseen), nil
 }

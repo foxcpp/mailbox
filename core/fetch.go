@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/foxcpp/mailbox/proto/imap"
 )
@@ -19,14 +20,30 @@ func (c *Client) GetDirs(accountId string) ([]string, error) {
 	Logger.Printf("Cache miss in GetDirs for %v\n", accountId)
 	// Cache miss, go and ask server.
 	// TODO: Interrupt watcher if needed.
-	list, err := c.imapConns[accountId].DirList()
+	separator, list, err := c.imapConns[accountId].DirList()
 	if err != nil {
 		Logger.Printf("GetDirs failed (%v): %v\n", accountId, err)
 		return nil, fmt.Errorf("dirs %v: %v", accountId, err)
 	}
 
+	c.imapDirSep = separator
+	for i, name := range list {
+		list[i] = c.normalizeDirName(name)
+	}
+
 	c.caches[accountId].dirs = list
 	return list, nil
+}
+
+// Normalized dir name - directory name with all server-defined path
+// delimiters replaced with our server-independent separator (currently "|").
+
+func (c *Client) normalizeDirName(raw string) string {
+	return strings.Replace(raw, c.imapDirSep, "|", -1)
+}
+
+func (c *Client) rawDirName(normalized string) string {
+	return strings.Replace(normalized, "|", c.imapDirSep, -1)
 }
 
 func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
@@ -41,7 +58,7 @@ func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
 
 	// Cache miss, go and ask server.
 	// TODO: Interrupt watcher if needed.
-	_, count, err := c.imapConns[accountId].DirStatus(dirName)
+	_, count, err := c.imapConns[accountId].DirStatus(c.rawDirName(dirName))
 	if err != nil {
 		Logger.Printf("GetUnreadCount failed (%v, %v): %v\n", accountId, dirName, err)
 		return 0, fmt.Errorf("unreadcount %v, %v: %v", accountId, dirName, err)
@@ -65,7 +82,7 @@ func (c *Client) GetMsgsList(accountId, dirName string) ([]imap.MessageInfo, err
 	Logger.Printf("Cache miss in GetMsgsList for %v, %v\n", accountId, dirName)
 	// Cache miss, go and ask server.
 	// TODO: Interrupt watcher if needed.
-	list, err := c.imapConns[accountId].FetchMaillist(dirName)
+	list, err := c.imapConns[accountId].FetchMaillist(c.rawDirName(dirName))
 	if err != nil {
 		Logger.Printf("GetMsgsList failed (%v, %v): %v\n", accountId, dirName, err)
 		return nil, fmt.Errorf("msgslist %v, %v: %v", accountId, dirName, err)
