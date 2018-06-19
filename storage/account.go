@@ -11,8 +11,10 @@ import (
 )
 
 type AccountCfg struct {
-	Name   string
-	Server struct {
+	AccountName string
+	SenderName  string
+	SenderEmail string
+	Server      struct {
 		Imap struct {
 			Host       string
 			Port       uint16
@@ -28,7 +30,12 @@ type AccountCfg struct {
 		User string
 		Pass string // IV + encrypted password actually
 	}
-	// TODO: Overrides?
+	Dirs struct {
+		Drafts string
+		Sent   string
+		Trash  string
+	}
+	CopyToSent *bool
 }
 
 func LoadAccount(name string) (*AccountCfg, error) {
@@ -54,6 +61,25 @@ func LoadAccount(name string) (*AccountCfg, error) {
 			res.Server.Smtp.Encryption != "starttls" {
 		return nil, fmt.Errorf("loadaccount %v: encryption field may contain only 'tls' or 'starttls' strings", name)
 	}
+
+	// Assign default values to possibly-missing fields.
+	if res.Dirs.Drafts == "" {
+		res.Dirs.Drafts = "Drafts"
+	}
+	if res.Dirs.Sent == "" {
+		res.Dirs.Sent = "Sent"
+	}
+	if res.Dirs.Trash == "" {
+		res.Dirs.Trash = "Trash"
+	}
+	if res.CopyToSent == nil {
+		copyToSent := true
+		res.CopyToSent = &copyToSent
+	}
+
+	// Write new default values to file if they are missing.
+	SaveAccount(name, res)
+
 	return &res, nil
 }
 

@@ -3,7 +3,7 @@ package core
 import "github.com/foxcpp/mailbox/storage"
 
 func (c *Client) AddAccount(name string, conf storage.AccountCfg, updateConfig bool) *AccountError {
-	c.accounts[name] = conf
+	c.Accounts[name] = conf
 
 	c.prepareServerConfig(name)
 
@@ -23,8 +23,14 @@ func (c *Client) AddAccount(name string, conf storage.AccountCfg, updateConfig b
 }
 
 func (c *Client) RemoveAccount(name string, updateConfig bool) error {
+	// Sync. watchers shutdown.
+	c.caches[name].updatesWatcherSig <- true
+	<-c.caches[name].updatesWatcherSig
+	c.caches[name].cacheCleanerSig <- true
+	<-c.caches[name].cacheCleanerSig
+
 	delete(c.caches, name)
-	delete(c.accounts, name)
+	delete(c.Accounts, name)
 	c.imapConns[name].Close()
 	delete(c.imapConns, name)
 	c.smtpConns[name].Close()

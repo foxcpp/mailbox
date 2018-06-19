@@ -78,6 +78,11 @@ func Connect(target common.ServConfig) (*Client, error) {
 	return &Client{cl: c}, nil
 }
 
+func (c *Client) RawClient() *client.Client {
+	// TODO: This should be refactored into exported variable.
+	return c.cl
+}
+
 func (c *Client) Auth(conf common.ServConfig) error {
 	return c.cl.Authenticate(sasl.NewPlainClient("", conf.User, conf.Pass))
 }

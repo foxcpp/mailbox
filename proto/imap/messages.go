@@ -93,22 +93,29 @@ func (c *Client) UnTag(dir string, tag string, uids ...uint32) error {
 
 // Create creates new message in specified directory, flags and date are option
 // and can be null.
-func (c *Client) Create(dir string, flags []string, date time.Time, msg *common.Msg) error {
+func (c *Client) Create(dir string, flags []string, date time.Time, msg *common.Msg) (uint32, error) {
+	status, err := c.cl.Select(dir, false)
+	if err != nil {
+		return 0, err
+	}
+
 	buf := bytes.Buffer{}
 	msg.Write(&buf)
-	return c.cl.Append(dir, flags, date, &buf)
+	return status.UidNext, c.cl.Append(dir, flags, date, &buf)
 }
 
-// Replace replaces existing message with different one *in one mailbox* (delete+create).
+// Replace replaces existing message with different one *in one mailbox*
+// (delete+create).
 //
-// UID will be changed. Replace with invalid input UID works exactly the
-// same as Create because invalid uids are ignored.
+// UID will be changed new one returned. Replace with invalid input UID works
+// exactly the same as Create because invalid uids are ignored.
 //
 // This function works a bit differently from delete+create. If message
 // creation fails then no message will be deleted.
-func (c *Client) Replace(dir string, uid uint32, flags []string, date time.Time, msg *common.Msg) error {
-	if _, err := c.cl.Select(dir, false); err != nil {
-		return err
+func (c *Client) Replace(dir string, uid uint32, flags []string, date time.Time, msg *common.Msg) (uint32, error) {
+	status, err := c.cl.Select(dir, false)
+	if err != nil {
+		return 0, err
 	}
 	defer c.cl.Close()
 
@@ -117,7 +124,7 @@ func (c *Client) Replace(dir string, uid uint32, flags []string, date time.Time,
 
 	// Mark old message as deleted.
 	if err := c.cl.UidStore(&seqset, eimap.FormatFlagsOp(eimap.AddFlags, true), []interface{}{eimap.DeletedFlag}, nil); err != nil {
-		return err
+		return 0, err
 	}
 
 	// Create new message.
@@ -126,10 +133,10 @@ func (c *Client) Replace(dir string, uid uint32, flags []string, date time.Time,
 	if err := c.cl.Append(dir, flags, date, &buf); err != nil {
 		// Message creation failed. Abort old message deletion.
 		if err := c.cl.UidStore(&seqset, eimap.FormatFlagsOp(eimap.RemoveFlags, true), []interface{}{eimap.DeletedFlag}, nil); err != nil {
-			return err
+			return 0, err
 		}
-		return err
+		return 0, err
 	}
 
-	return nil
+	return status.UidNext, nil
 }
