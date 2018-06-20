@@ -2,25 +2,30 @@ package core
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"sync"
 	"time"
 
+	eimap "github.com/emersion/go-imap"
 	"github.com/foxcpp/mailbox/proto/common"
 	"github.com/foxcpp/mailbox/proto/imap"
-	"github.com/foxcpp/mailbox/proto/smtp"
 	"github.com/foxcpp/mailbox/storage"
 )
+
+func remove(s []imap.MessageInfo, i int) []imap.MessageInfo {
+	return append(s[:i], s[i+1:]...)
+}
 
 type accountData struct {
 	dirs          StrSet
 	unreadCounts  map[string]uint
 	dirsStamp     time.Time
 	messagesByUid map[uint32]*imap.MessageInfo
+	// TODO: Slice should be replaced with linked list because we need to remove items from middle
+	// and do it pretty often.
 	messagesByDir map[string][]imap.MessageInfo
 	msgStamp      map[uint32]time.Time
-
-	updatesWatcherSig chan bool
-	cacheCleanerSig   chan bool
 
 	lock sync.Mutex
 }
@@ -36,6 +41,16 @@ type accountData struct {
 type FrontendHooks struct {
 	// Input is prompt text, output should be password.
 	PasswordPrompt func(string) string
+
+	// Called when due to some kind of de-sync all caches for specific account were invalidated.
+	// Frontend should re-request all data from core and update presentation in UI.
+	Reset func(string)
+
+	// Same as Reset but only one directory is invalidated.
+	ResetDir func(string, string)
+
+	// Called when new message received.
+	NewMessage func(string, string, *imap.MessageInfo)
 }
 
 type Client struct {
@@ -52,7 +67,6 @@ type Client struct {
 	}
 
 	imapConns map[string]*imap.Client
-	smtpConns map[string]*smtp.Client
 
 	imapDirSep string
 }
@@ -89,7 +103,6 @@ func Launch(hooks FrontendHooks) (*Client, error) {
 	res.Accounts = make(map[string]storage.AccountCfg)
 	res.caches = make(map[string]*accountData)
 	res.imapConns = make(map[string]*imap.Client)
-	res.smtpConns = make(map[string]*smtp.Client)
 
 	for name, info := range accounts {
 		Logger.Println("Setting up account", name+"...")
@@ -150,14 +163,12 @@ func (c *Client) initCaches(accountId string) {
 	// This way we will be able really speed up things.
 
 	c.caches[accountId] = &accountData{
-		dirs:              nil,
-		unreadCounts:      make(map[string]uint),
-		dirsStamp:         time.Now(),
-		messagesByUid:     make(map[uint32]*imap.MessageInfo),
-		messagesByDir:     make(map[string][]imap.MessageInfo),
-		msgStamp:          make(map[uint32]time.Time),
-		updatesWatcherSig: make(chan bool),
-		cacheCleanerSig:   make(chan bool),
+		dirs:          nil,
+		unreadCounts:  make(map[string]uint),
+		dirsStamp:     time.Now(),
+		messagesByUid: make(map[uint32]*imap.MessageInfo),
+		messagesByDir: make(map[string][]imap.MessageInfo),
+		msgStamp:      make(map[uint32]time.Time),
 	}
 }
 
@@ -179,20 +190,48 @@ func (c *Client) connectToServer(accountId string) *AccountError {
 		return &AccountError{accountId, err}
 	}
 
+	c.imapConns[accountId].Callbacks = c.makeUpdateCallbacks(accountId)
+	c.imapConns[accountId].Logger = *log.New(os.Stderr, "[mailbox/proto/imap:"+accountId+"] ", log.LstdFlags)
+
 	return nil
 }
 
-func (c *Client) updatesWatcher(accountId string) {
-	select {
-	case <-c.caches[accountId].updatesWatcherSig:
-		return
-	case <-c.imapConns[accountId].RawClient().Updates:
-		return
-	}
-}
+func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
+	return &imap.UpdateCallbacks{
+		NewMessage: func(dir string, seqnum uint32) {
+			Logger.Printf("New message for account %v in dir %v, sequence number: %v.\n", accountId, dir, seqnum)
 
-func (c *Client) cacheCleaner(accountId string) {
-	Logger.Println("Cache invalidator started.")
+			c.caches[accountId].lock.Lock()
+			for _, m := range c.caches[accountId].messagesByDir[dir] {
+				delete(c.caches[accountId].messagesByUid, m.UID)
+			}
+			c.caches[accountId].messagesByDir = make(map[string][]imap.MessageInfo)
+			c.caches[accountId].lock.Unlock()
+			c.GetMsgsList(accountId, dir)
+
+			if c.Hooks.ResetDir != nil {
+				c.Hooks.ResetDir(accountId, dir)
+			}
+		},
+		MessageRemoved: func(dir string, seqnum uint32) {
+			Logger.Printf("Message removed from dir %v on account %v, sequence number: %v.\n", dir, accountId, seqnum)
+
+			c.caches[accountId].lock.Lock()
+			for _, m := range c.caches[accountId].messagesByDir[dir] {
+				delete(c.caches[accountId].messagesByUid, m.UID)
+			}
+			c.caches[accountId].messagesByDir = make(map[string][]imap.MessageInfo)
+			c.caches[accountId].lock.Unlock()
+			c.GetMsgsList(accountId, dir)
+
+			if c.Hooks.ResetDir != nil {
+				c.Hooks.ResetDir(accountId, dir)
+			}
+		},
+		MessageUpdate: func(dir string, info *eimap.Message) {
+			// TODO
+		},
+	}
 }
 
 // flushCaches saves dirs information to cache file on disk to allow quick loading after restart.
@@ -203,14 +242,14 @@ func (c *Client) flushCaches() error {
 }
 
 func (c *Client) prefetchData(accountId string) error {
-	Logger.Println("Prefetching directories list...")
+	Logger.Println("Prefetching directories list for account", accountId+"...")
 	dirs, err := c.GetDirs(accountId)
 	if err != nil {
 		return err
 	}
 	Logger.Println("Directories:", dirs.List())
 
-	Logger.Println("Prefetching directories status...")
+	Logger.Println("Prefetching directories status for account", accountId+"...")
 	// Even though we ignore returned values - caches will
 	// be populated with needed data.
 	for _, dir := range c.caches[accountId].dirs.List() {
@@ -222,9 +261,12 @@ func (c *Client) prefetchData(accountId string) error {
 		Logger.Println(count, "unread messages in", dir)
 	}
 
-	Logger.Println("Prefetching INBOX contents...")
+	Logger.Println("Prefetching INBOX contents for account", accountId+"...")
 	// User will very likely first open INBOX, right?
 	list, err := c.GetMsgsList(accountId, "INBOX")
+	if err != nil {
+		return err
+	}
 	Logger.Println(len(list), "messages in INBOX")
 	return err
 }

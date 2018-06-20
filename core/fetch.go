@@ -156,7 +156,7 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32) (*common.Msg,
 	}
 
 	// Update information in cache.
-	data.Msg = *msg
+	data = msg
 
 	return &data.Msg, nil
 }
@@ -170,4 +170,9 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32) (*common.Msg,
 // (usually anic).
 func (c *Client) GetMsgPart(accountId, dirName string, uid uint32, partIndex int) (*common.Part, error) {
 	return c.imapConns[accountId].DownloadPart(uid, partIndex)
+}
+
+func (c *Client) ResolveUid(accountId, dir string, seqnum uint32) (uint32, error) {
+	return c.caches[accountId].messagesByDir[dir][seqnum].UID, nil
+	//return c.imapConns[accountId].ResolveUid(dir, seqnum)
 }

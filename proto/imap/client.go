@@ -3,8 +3,10 @@ package imap
 import (
 	"crypto/tls"
 	"errors"
+	"log"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	eimap "github.com/emersion/go-imap"
@@ -13,9 +15,43 @@ import (
 	"github.com/foxcpp/mailbox/proto/common"
 )
 
+/*
+	Most callbacks should manually resolve sequence number into UID if
+	necessary, client provides wrapper for this purpose: ResolveSeqNum.
+	Also, newInfo contains partial information in special form, so callback
+	should do MessageInfo.UpdateFrom(newInfo) to update cached information (if any).
+
+	Callbacks for dirs other than INBOX usually called only during operations
+	on these directories because we monitor only INBOX. Thus notifications
+	about INBOX can be delivered at any time.
+
+	Note: Callback MUST NOT ignore any calls, because sequence numbers depend
+	on each other and should be re-synced on each opeartion.
+
+	Note: Usually callbacks will be called from separate goroutine so code
+	should be thread-safe.
+*/
+type UpdateCallbacks struct {
+	NewMessage     func(dir string, seqnum uint32)
+	MessageUpdate  func(dir string, newInfo *eimap.Message)
+	MessageRemoved func(dir string, seqnum uint32)
+}
+
 type Client struct {
-	cl            *client.Client
+	Callbacks         *UpdateCallbacks
+	KnownMailboxSizes map[string]uint32
+	Logger            log.Logger
+
 	seenMailboxes map[string]eimap.MailboxInfo
+
+	updates               chan client.Update
+	updatesDispatcherStop chan bool
+
+	idlerInterrupt chan bool
+	idlerStopSig   chan bool
+
+	IOLock sync.Mutex
+	cl     *client.Client
 }
 
 func tlsHandshake(conn net.Conn, hostname string) (*client.Client, error) {
@@ -75,7 +111,19 @@ func Connect(target common.ServConfig) (*Client, error) {
 	// 30 timeout for any I/O.
 	c.Timeout = 30 * time.Second
 
-	return &Client{cl: c}, nil
+	res := &Client{cl: c}
+	// We have that small buffer to prevent updates queue from being filled
+	// with updates from different mailboxes, as this will break a lot of things.
+	res.updates = make(chan client.Update, 32)
+	res.idlerInterrupt = make(chan bool)
+	res.KnownMailboxSizes = make(map[string]uint32)
+	res.cl.Updates = res.updates
+
+	//res.cl.SetDebug(os.Stderr)
+
+	go res.updatesWatch()
+
+	return res, nil
 }
 
 func (c *Client) RawClient() *client.Client {
@@ -84,15 +132,27 @@ func (c *Client) RawClient() *client.Client {
 }
 
 func (c *Client) Auth(conf common.ServConfig) error {
-	return c.cl.Authenticate(sasl.NewPlainClient("", conf.User, conf.Pass))
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+
+	err := c.cl.Authenticate(sasl.NewPlainClient("", conf.User, conf.Pass))
+	if err == nil {
+		go c.idleOnInbox()
+	}
+	return err
 }
 
 func (c *Client) Close() error {
+	c.updatesDispatcherStop <- true
+	<-c.updatesDispatcherStop
+
 	c.cl.Close()
 	c.cl.Logout()
 	return c.cl.Terminate()
 }
 
 func (c *Client) Logout() error {
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
 	return c.cl.Logout()
 }

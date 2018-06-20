@@ -5,6 +5,11 @@ import (
 )
 
 func (c *Client) DirList() (delimiter string, list []string, err error) {
+	c.stopIdle()
+	defer c.resumeIdle()
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+
 	mailboxes := make(chan *imap.MailboxInfo, 32)
 	done := make(chan error, 1)
 	go func() {
@@ -20,6 +25,11 @@ func (c *Client) DirList() (delimiter string, list []string, err error) {
 }
 
 func (c *Client) DirStatus(dirName string) (total uint, unread uint, err error) {
+	c.stopIdle()
+	defer c.resumeIdle()
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+
 	status, err := c.cl.Select(dirName, true)
 	if err != nil {
 		return 0, 0, nil

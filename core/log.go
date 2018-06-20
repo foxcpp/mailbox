@@ -8,5 +8,5 @@ import (
 var Logger *log.Logger
 
 func init() {
-	Logger = log.New(os.Stdout, "[mailbox] ", log.LstdFlags)
+	Logger = log.New(os.Stderr, "[mailbox/core] ", log.LstdFlags)
 }

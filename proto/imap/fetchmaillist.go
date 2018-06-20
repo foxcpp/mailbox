@@ -5,6 +5,11 @@ import (
 )
 
 func (c *Client) FetchMaillist(dir string) ([]MessageInfo, error) {
+	c.stopIdle()
+	defer c.resumeIdle()
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+
 	mbox, err := c.cl.Select(dir, true)
 	if err != nil {
 		return nil, err
@@ -35,6 +40,11 @@ func min(a, b uint32) uint32 {
 }
 
 func (c *Client) FetchPartialMaillist(dir string, count, offset uint32) ([]MessageInfo, error) {
+	c.stopIdle()
+	defer c.resumeIdle()
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+
 	mbox, err := c.cl.Select(dir, true)
 	if err != nil {
 		return nil, err

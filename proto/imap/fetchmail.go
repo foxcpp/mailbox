@@ -12,11 +12,17 @@ import (
 // FetchPartialMail requests text parts of message with specified uid from specified directory.
 // Returned Msg object will contain message headers, text/plain, text/html parts and information (!)
 // about other parts (body slice will be nil).
-func (c *Client) FetchPartialMail(dir string, uid uint32, filter func(string, string) bool) (*common.Msg, error) {
+func (c *Client) FetchPartialMail(dir string, uid uint32, filter func(string, string) bool) (*MessageInfo, error) {
+	c.stopIdle()
+	defer c.resumeIdle()
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+
 	_, err := c.cl.Select(dir, true)
 	if err != nil {
 		return nil, err
 	}
+	defer c.cl.Close()
 
 	seqset := eimap.SeqSet{}
 	seqset.AddNum(uid)
@@ -27,18 +33,24 @@ func (c *Client) FetchPartialMail(dir string, uid uint32, filter func(string, st
 		return nil, err
 	}
 	msgStruct := <-out
-	res := MessageToInfo(msgStruct).Msg
+	res := MessageToInfo(msgStruct)
 	if msgStruct.BodyStructure.MIMEType == "multipart" {
 		// Request only parts accepted by filter.
 		for i, partStruct := range msgStruct.BodyStructure.Parts {
 			if filter(partStruct.MIMEType, partStruct.MIMESubType) {
+				c.IOLock.Unlock()
+				c.resumeIdle()
+
 				part, err := c.DownloadPart(uid, i)
+
+				c.stopIdle()
+				c.IOLock.Lock()
 				if err != nil {
 					return nil, err
 				}
-				res.Parts = append(res.Parts, *part)
+				res.Msg.Parts = append(res.Msg.Parts, *part)
 			} else {
-				res.Parts = append(res.Parts, bodyStructToPart(*partStruct))
+				res.Msg.Parts = append(res.Msg.Parts, bodyStructToPart(*partStruct))
 			}
 		}
 	} else if filter(msgStruct.BodyStructure.MIMEType, msgStruct.BodyStructure.MIMESubType) {
@@ -61,13 +73,16 @@ func (c *Client) FetchPartialMail(dir string, uid uint32, filter func(string, st
 			if err != nil {
 				return nil, err
 			}
-			res.Parts = append(res.Parts, part)
+			res.Msg.Parts = append(res.Msg.Parts, part)
 		}
 	}
 	return &res, nil
 }
 
 func (c *Client) DownloadPart(uid uint32, partIndex int) (*common.Part, error) {
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+
 	hdr, err := c.downloadPartHeader(uid, partIndex)
 	if err != nil {
 		return nil, err

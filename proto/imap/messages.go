@@ -11,6 +11,11 @@ import (
 // CopyTo copies all specified messages from one directory to another.
 // Invalid UIDs are ignored!
 func (c *Client) CopyTo(fromDir string, targetDir string, uids ...uint32) error {
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+	c.stopIdle()
+	defer c.resumeIdle()
+
 	if _, err := c.cl.Select(fromDir, false); err != nil {
 		return err
 	}
@@ -28,6 +33,11 @@ func (c *Client) CopyTo(fromDir string, targetDir string, uids ...uint32) error 
 // source directory.
 // Invalid UIDs are ignored!
 func (c *Client) MoveTo(fromDir string, targetDir string, uids ...uint32) error {
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+	c.stopIdle()
+	defer c.resumeIdle()
+
 	if _, err := c.cl.Select(fromDir, false); err != nil {
 		return err
 	}
@@ -47,6 +57,11 @@ func (c *Client) MoveTo(fromDir string, targetDir string, uids ...uint32) error 
 // Delete deletes all specified messages.
 // Invalid UIDs are ignored!
 func (c *Client) Delete(dir string, uids ...uint32) error {
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+	c.stopIdle()
+	defer c.resumeIdle()
+
 	if _, err := c.cl.Select(dir, false); err != nil {
 		return err
 	}
@@ -66,6 +81,11 @@ const (
 // Tag adds a tag to listed messages.
 // Invalid UIDs are ignored!
 func (c *Client) Tag(dir string, tag string, uids ...uint32) error {
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+	c.stopIdle()
+	defer c.resumeIdle()
+
 	if _, err := c.cl.Select(dir, false); err != nil {
 		return err
 	}
@@ -80,6 +100,11 @@ func (c *Client) Tag(dir string, tag string, uids ...uint32) error {
 // UnTag removes a tag from listed messages.
 // Invalid UIDs are ignored!
 func (c *Client) UnTag(dir string, tag string, uids ...uint32) error {
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+	c.stopIdle()
+	defer c.resumeIdle()
+
 	if _, err := c.cl.Select(dir, false); err != nil {
 		return err
 	}
@@ -94,10 +119,16 @@ func (c *Client) UnTag(dir string, tag string, uids ...uint32) error {
 // Create creates new message in specified directory, flags and date are option
 // and can be null.
 func (c *Client) Create(dir string, flags []string, date time.Time, msg *common.Msg) (uint32, error) {
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+	c.stopIdle()
+	defer c.resumeIdle()
+
 	status, err := c.cl.Select(dir, false)
 	if err != nil {
 		return 0, err
 	}
+	defer c.cl.Close()
 
 	buf := bytes.Buffer{}
 	msg.Write(&buf)
@@ -113,6 +144,11 @@ func (c *Client) Create(dir string, flags []string, date time.Time, msg *common.
 // This function works a bit differently from delete+create. If message
 // creation fails then no message will be deleted.
 func (c *Client) Replace(dir string, uid uint32, flags []string, date time.Time, msg *common.Msg) (uint32, error) {
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+	c.stopIdle()
+	defer c.resumeIdle()
+
 	status, err := c.cl.Select(dir, false)
 	if err != nil {
 		return 0, err
