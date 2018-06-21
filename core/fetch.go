@@ -113,8 +113,10 @@ func (c *Client) GetMsgsList(accountId, dirName string) ([]imap.MessageInfo, err
 	}
 
 	c.caches[accountId].messagesByDir[dirName] = list
+	c.caches[accountId].messagesByUid[dirName] = make(map[uint32]*imap.MessageInfo)
 	for _, msg := range list {
-		c.caches[accountId].messagesByUid[msg.UID] = &msg
+		cpy := msg
+		c.caches[accountId].messagesByUid[dirName][msg.UID] = &cpy
 	}
 
 	return list, nil
@@ -132,7 +134,7 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32) (*common.Msg,
 	c.caches[accountId].lock.Lock()
 	defer c.caches[accountId].lock.Unlock()
 
-	data, prs := c.caches[accountId].messagesByUid[uid]
+	data, prs := c.caches[accountId].messagesByUid[dirName][uid]
 	if prs && len(data.Msg.Parts) != 0 {
 		// Cache hit!
 		return &data.Msg, nil
@@ -145,7 +147,7 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32) (*common.Msg,
 			return nil, err
 		}
 		// This will panic if UID is invalid.
-		data = c.caches[accountId].messagesByUid[uid]
+		data = c.caches[accountId].messagesByUid[dirName][uid]
 	}
 
 	Logger.Printf("Downloading message text for (%v, %v, %v)...\n", accountId, dirName, uid)
@@ -173,6 +175,6 @@ func (c *Client) GetMsgPart(accountId, dirName string, uid uint32, partIndex int
 }
 
 func (c *Client) ResolveUid(accountId, dir string, seqnum uint32) (uint32, error) {
-	return c.caches[accountId].messagesByDir[dir][seqnum].UID, nil
-	//return c.imapConns[accountId].ResolveUid(dir, seqnum)
+	//return c.caches[accountId].messagesByDir[dir][seqnum].UID, nil
+	return c.imapConns[accountId].ResolveUid(dir, seqnum)
 }

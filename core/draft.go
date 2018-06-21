@@ -11,13 +11,15 @@ func (c *Client) SaveDraft(accountId string, draft *common.Msg) (uint32, error) 
 	c.caches[accountId].lock.Lock()
 	defer c.caches[accountId].lock.Unlock()
 
-	uid, err := c.imapConns[accountId].Create(c.Accounts[accountId].Dirs.Drafts, []string{`\Draft`}, time.Now(), draft)
+	draftDir := c.Accounts[accountId].Dirs.Drafts
+
+	uid, err := c.imapConns[accountId].Create(draftDir, []string{`\Draft`}, time.Now(), draft)
 	if err != nil {
 		return 0, err
 	}
 
-	delete(c.caches[accountId].unreadCounts, c.Accounts[accountId].Dirs.Drafts)
-	delete(c.caches[accountId].messagesByDir, c.Accounts[accountId].Dirs.Drafts)
+	delete(c.caches[accountId].unreadCounts, draftDir)
+	delete(c.caches[accountId].messagesByDir, draftDir)
 
 	return uid, nil
 }
@@ -26,14 +28,16 @@ func (c *Client) UpdateDraft(accountId string, oldUid uint32, new *common.Msg) (
 	c.caches[accountId].lock.Lock()
 	defer c.caches[accountId].lock.Unlock()
 
-	uid, err := c.imapConns[accountId].Replace(c.Accounts[accountId].Dirs.Drafts, oldUid, []string{`\Draft`}, time.Now(), new)
+	draftDir := c.Accounts[accountId].Dirs.Drafts
+
+	uid, err := c.imapConns[accountId].Replace(draftDir, oldUid, []string{`\Draft`}, time.Now(), new)
 	if err != nil {
 		return 0, err
 	}
 
-	delete(c.caches[accountId].messagesByUid, oldUid)
-	delete(c.caches[accountId].unreadCounts, c.Accounts[accountId].Dirs.Drafts)
-	delete(c.caches[accountId].messagesByDir, c.Accounts[accountId].Dirs.Drafts)
+	delete(c.caches[accountId].messagesByUid[draftDir], oldUid)
+	delete(c.caches[accountId].unreadCounts, draftDir)
+	delete(c.caches[accountId].messagesByDir, draftDir)
 
 	return uid, nil
 }

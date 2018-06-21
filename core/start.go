@@ -21,7 +21,7 @@ type accountData struct {
 	dirs          StrSet
 	unreadCounts  map[string]uint
 	dirsStamp     time.Time
-	messagesByUid map[uint32]*imap.MessageInfo
+	messagesByUid map[string]map[uint32]*imap.MessageInfo
 	// TODO: Slice should be replaced with linked list because we need to remove items from middle
 	// and do it pretty often.
 	messagesByDir map[string][]imap.MessageInfo
@@ -166,7 +166,7 @@ func (c *Client) initCaches(accountId string) {
 		dirs:          nil,
 		unreadCounts:  make(map[string]uint),
 		dirsStamp:     time.Now(),
-		messagesByUid: make(map[uint32]*imap.MessageInfo),
+		messagesByUid: make(map[string]map[uint32]*imap.MessageInfo),
 		messagesByDir: make(map[string][]imap.MessageInfo),
 		msgStamp:      make(map[uint32]time.Time),
 	}
@@ -202,12 +202,38 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			Logger.Printf("New message for account %v in dir %v, sequence number: %v.\n", accountId, dir, seqnum)
 
 			c.caches[accountId].lock.Lock()
-			for _, m := range c.caches[accountId].messagesByDir[dir] {
-				delete(c.caches[accountId].messagesByUid, m.UID)
+
+			// TODO: Measure performance impact of this extract resolve request
+			// and consider exposing seqnum-based operations in imap.Client.
+			uid, err := c.ResolveUid(accountId, dir, seqnum)
+			if err != nil {
+				Logger.Println("Alert: Reloading message list: failed to download message:", err)
+				c.caches[accountId].lock.Unlock()
+				c.reloadMaillist(accountId, dir)
+				return
 			}
-			c.caches[accountId].messagesByDir = make(map[string][]imap.MessageInfo)
+
+			msgsByDir := c.caches[accountId].messagesByDir[dir]
+
+			if seqnum != uint32(len(msgsByDir)+1) {
+				Logger.Println("Alert: Reloading message list: sequence numbers de-synced.")
+				c.caches[accountId].lock.Unlock()
+				c.reloadMaillist(accountId, dir)
+				return
+			}
+			// If this thing really should go to the end of slice...
+
+			msg, err := c.imapConns[accountId].FetchPartialMail(dir, uid, imap.TextOnly)
+			if err != nil {
+				Logger.Println("Alert: Reloading message list: failed to download message:", err)
+				c.caches[accountId].lock.Unlock()
+				c.reloadMaillist(accountId, dir)
+				return
+			}
+			msgsByDir = append(msgsByDir, *msg)
+			c.caches[accountId].messagesByUid[dir][msg.UID] = &msgsByDir[len(msgsByDir)-1]
+
 			c.caches[accountId].lock.Unlock()
-			c.GetMsgsList(accountId, dir)
 
 			if c.Hooks.ResetDir != nil {
 				c.Hooks.ResetDir(accountId, dir)
@@ -217,12 +243,20 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			Logger.Printf("Message removed from dir %v on account %v, sequence number: %v.\n", dir, accountId, seqnum)
 
 			c.caches[accountId].lock.Lock()
-			for _, m := range c.caches[accountId].messagesByDir[dir] {
-				delete(c.caches[accountId].messagesByUid, m.UID)
+
+			// Look-up UID to remove in cache.
+			if uint32(len(c.caches[accountId].messagesByDir[dir])) < seqnum {
+				Logger.Println("Alert: Reloading message list: sequence number is out of range.")
+				c.caches[accountId].lock.Unlock()
+				c.reloadMaillist(accountId, dir)
+				return
 			}
-			c.caches[accountId].messagesByDir = make(map[string][]imap.MessageInfo)
+			uid := c.caches[accountId].messagesByDir[dir][seqnum-1].UID
+
+			c.caches[accountId].messagesByDir[dir] = remove(c.caches[accountId].messagesByDir[dir], int(seqnum-1))
+			delete(c.caches[accountId].messagesByUid[dir], uid)
+
 			c.caches[accountId].lock.Unlock()
-			c.GetMsgsList(accountId, dir)
 
 			if c.Hooks.ResetDir != nil {
 				c.Hooks.ResetDir(accountId, dir)
@@ -269,4 +303,16 @@ func (c *Client) prefetchData(accountId string) error {
 	}
 	Logger.Println(len(list), "messages in INBOX")
 	return err
+}
+
+func (c *Client) reloadMaillist(accountId string, dir string) {
+	c.caches[accountId].lock.Lock()
+	c.caches[accountId].messagesByUid[dir] = make(map[uint32]*imap.MessageInfo)
+	c.caches[accountId].messagesByDir = make(map[string][]imap.MessageInfo)
+	c.caches[accountId].lock.Unlock()
+	c.GetMsgsList(accountId, dir)
+
+	if c.Hooks.ResetDir != nil {
+		c.Hooks.ResetDir(accountId, dir)
+	}
 }

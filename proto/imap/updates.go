@@ -28,15 +28,13 @@ func (c *Client) updatesWatch() {
 					}
 				}
 				c.KnownMailboxSizes[mboxUpd.Mailbox.Name] = mboxUpd.Mailbox.Messages
-			case *client.StatusUpdate:
-				//fmt.Printf("STATUS: %+v\n", *update.Update.(*client.StatusUpdate).Status)
 			case *client.ExpungeUpdate:
 				// XXX: This still can explode when current mailbox != mailbox when update
 				// was received.
 				if c.cl.Mailbox() != nil {
 					lastMbox = c.cl.Mailbox().Name
 				}
-				//fmt.Printf("EXPUNGE: %+v\n", *update.(*client.ExpungeUpdate))
+				c.KnownMailboxSizes[lastMbox] -= 1
 				if c.Callbacks != nil {
 					c.Callbacks.MessageRemoved(lastMbox, update.(*client.ExpungeUpdate).SeqNum)
 				}
@@ -46,7 +44,6 @@ func (c *Client) updatesWatch() {
 				if c.cl.Mailbox() != nil {
 					lastMbox = c.cl.Mailbox().Name
 				}
-				//fmt.Printf("MESSAGE: %+v\n", *update.(*client.MessageUpdate).Message)
 				if c.Callbacks != nil {
 					c.Callbacks.MessageUpdate(lastMbox, update.(*client.MessageUpdate).Message)
 				}
