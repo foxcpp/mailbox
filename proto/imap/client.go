@@ -48,7 +48,6 @@ type Client struct {
 	updatesDispatcherStop chan bool
 
 	idlerInterrupt chan bool
-	idlerStopSig   chan bool
 
 	IOLock sync.Mutex
 	cl     *client.Client
@@ -116,6 +115,7 @@ func Connect(target common.ServConfig) (*Client, error) {
 	// with updates from different mailboxes, as this will break a lot of things.
 	res.updates = make(chan client.Update, 32)
 	res.idlerInterrupt = make(chan bool)
+	res.updatesDispatcherStop = make(chan bool)
 	res.KnownMailboxSizes = make(map[string]uint32)
 	res.cl.Updates = res.updates
 
@@ -146,7 +146,9 @@ func (c *Client) Close() error {
 	c.updatesDispatcherStop <- true
 	<-c.updatesDispatcherStop
 
-	c.cl.Close()
+	c.idlerInterrupt <- true
+	<-c.idlerInterrupt
+
 	c.cl.Logout()
 	return c.cl.Terminate()
 }

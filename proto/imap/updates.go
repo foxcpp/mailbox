@@ -1,8 +1,6 @@
 package imap
 
 import (
-	"fmt"
-
 	eimap "github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 )
@@ -54,7 +52,6 @@ func (c *Client) updatesWatch() {
 				}
 			}
 		case <-c.updatesDispatcherStop:
-			fmt.Println("Stopping...")
 			c.updatesDispatcherStop <- true
 			return
 		}

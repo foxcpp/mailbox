@@ -18,15 +18,15 @@ func (c *Client) idleOnInbox() {
 		return
 	}
 
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+
 	_, err := c.cl.Select("INBOX", true)
 	if err != nil {
 		c.Logger.Println("Mailbox selection failed, not entering IDLE mode:", err)
 		return
 	}
-	defer c.Close()
-
-	c.IOLock.Lock()
-	defer c.IOLock.Unlock()
+	defer c.cl.Close()
 
 	// Used to signal error occured during IDLE.
 	idleChan := make(chan error, 1)
