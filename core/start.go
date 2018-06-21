@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"sync"
-	"time"
 
 	eimap "github.com/emersion/go-imap"
 	"github.com/foxcpp/mailbox/proto/common"
@@ -20,12 +19,10 @@ func remove(s []imap.MessageInfo, i int) []imap.MessageInfo {
 type accountData struct {
 	dirs          StrSet
 	unreadCounts  map[string]uint
-	dirsStamp     time.Time
 	messagesByUid map[string]map[uint32]*imap.MessageInfo
 	// TODO: Slice should be replaced with linked list because we need to remove items from middle
 	// and do it pretty often.
 	messagesByDir map[string][]imap.MessageInfo
-	msgStamp      map[uint32]time.Time
 
 	lock sync.Mutex
 }
@@ -165,10 +162,8 @@ func (c *Client) initCaches(accountId string) {
 	c.caches[accountId] = &accountData{
 		dirs:          nil,
 		unreadCounts:  make(map[string]uint),
-		dirsStamp:     time.Now(),
 		messagesByUid: make(map[string]map[uint32]*imap.MessageInfo),
 		messagesByDir: make(map[string][]imap.MessageInfo),
-		msgStamp:      make(map[uint32]time.Time),
 	}
 }
 
