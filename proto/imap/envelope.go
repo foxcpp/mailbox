@@ -9,10 +9,10 @@ import (
 )
 
 type MessageInfo struct {
-	UID                                    uint32
-	Msg                                    common.Msg
-	Read, Answered, Deleted, Draft, Recent bool
-	CustomFlags                            []string
+	UID                      uint32
+	Msg                      common.Msg
+	Readen, Answered, Recent bool
+	CustomTags               []string
 }
 
 func convertAddrList(in []*eimap.Address) []mail.Address {
@@ -36,19 +36,15 @@ func MessageToInfo(msg *eimap.Message) MessageInfo {
 	for _, flag := range msg.Flags {
 		switch flag {
 		case eimap.SeenFlag:
-			res.Read = true
+			res.Readen = true
 		case eimap.AnsweredFlag:
 			res.Answered = true
-		case eimap.DeletedFlag:
-			res.Deleted = true
-		case eimap.DraftFlag:
-			res.Draft = true
 		case eimap.RecentFlag:
 			res.Recent = true
 		default:
 			// Special IMAP flags have \ prefix.
 			if !strings.HasPrefix(flag, "\\") {
-				res.CustomFlags = append(res.CustomFlags, flag)
+				res.CustomTags = append(res.CustomTags, flag)
 			}
 		}
 	}
