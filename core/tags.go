@@ -33,6 +33,7 @@ func (c *Client) Tag(accountId, dir string, tag Tag, uids ...uint32) error {
 			msgPtr.CustomTags = append(msgPtr.CustomTags, string(tag))
 		}
 	}
+	c.caches[accountId].dirty = true
 	return nil
 }
 
@@ -62,5 +63,6 @@ func (c *Client) Untag(accountId, dir string, tag Tag, uids ...uint32) error {
 			msgPtr.CustomTags = newTags
 		}
 	}
+	c.caches[accountId].dirty = true
 	return nil
 }

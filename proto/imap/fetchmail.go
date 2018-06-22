@@ -2,6 +2,7 @@ package imap
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 
 	eimap "github.com/emersion/go-imap"
@@ -33,18 +34,16 @@ func (c *Client) FetchPartialMail(dir string, uid uint32, filter func(string, st
 		return nil, err
 	}
 	msgStruct := <-out
+	if msgStruct == nil {
+		return nil, errors.New("fetchmail: invalid uid")
+	}
 	res := MessageToInfo(msgStruct)
 	if msgStruct.BodyStructure.MIMEType == "multipart" {
 		// Request only parts accepted by filter.
 		for i, partStruct := range msgStruct.BodyStructure.Parts {
 			if filter(partStruct.MIMEType, partStruct.MIMESubType) {
-				c.IOLock.Unlock()
-				c.resumeIdle()
-
-				part, err := c.DownloadPart(uid, i)
-
-				c.stopIdle()
-				c.IOLock.Lock()
+				// TODO: Can we download all parts at once?
+				part, err := c.downloadPart(uid, i)
 				if err != nil {
 					return nil, err
 				}
@@ -79,60 +78,71 @@ func (c *Client) FetchPartialMail(dir string, uid uint32, filter func(string, st
 	return &res, nil
 }
 
-func (c *Client) DownloadPart(uid uint32, partIndex int) (*common.Part, error) {
+func (c *Client) DownloadPart(dir string, uid uint32, partIndex int) (*common.Part, error) {
+	c.stopIdle()
+	defer c.resumeIdle()
 	c.IOLock.Lock()
 	defer c.IOLock.Unlock()
 
-	hdr, err := c.downloadPartHeader(uid, partIndex)
+	_, err := c.cl.Select(dir, true)
 	if err != nil {
 		return nil, err
 	}
-	body, err := c.downloadPartBody(uid, partIndex)
+
+	return c.downloadPart(uid, partIndex)
+}
+
+func (c *Client) downloadPart(uid uint32, partIndex int) (*common.Part, error) {
+	// TODO: Allow to fetch multiple parts in one operation.
+	headerFI := eimap.FetchItem("BODY.PEEK[" + strconv.Itoa(partIndex+1) + ".MIME]")
+	bodyFI := eimap.FetchItem("BODY.PEEK[" + strconv.Itoa(partIndex+1) + "]")
+
+	// .PEEK specifier will be omitted in response.
+	headerFIRes := eimap.FetchItem("BODY[" + strconv.Itoa(partIndex+1) + ".MIME]")
+	bodyFIRes := eimap.FetchItem("BODY[" + strconv.Itoa(partIndex+1) + "]")
+
+	seqset := eimap.SeqSet{}
+	seqset.AddNum(uid)
+
+	out := make(chan *eimap.Message, 1)
+	err := c.cl.UidFetch(&seqset, []eimap.FetchItem{headerFI, bodyFI}, out)
 	if err != nil {
 		return nil, err
+	}
+	msg := <-out
+
+	hdr := (*message.Entity)(nil)
+	buf := ([]byte)(nil)
+
+	for name, v := range msg.Body {
+		if name.FetchItem() == headerFIRes {
+			// Parse MIME header.
+			hdr, err = message.Read(v)
+			if err != nil {
+				return nil, err
+			}
+		} else if name.FetchItem() == bodyFIRes {
+			// Parse message body.
+			buf = make([]byte, v.Len())
+			v.Read(buf)
+		} else {
+			fmt.Println("THE FUCK:", name.FetchItem(), headerFI, bodyFI)
+		}
 	}
 
 	res := common.Part{}
-	res.Type.Value, res.Type.Params, err = hdr.ContentType()
-	if err != nil {
-		return nil, err
-	}
-	res.Body = body
+
+	// Split MIME header.
+	res.Type.Value, res.Type.Params, _ = hdr.Header.ContentType()
+	hdr.Header.Del("Content-Type")
+	res.Disposition.Value, res.Disposition.Params, _ = hdr.Header.ContentDisposition()
+	hdr.Header.Del("Content-Disposition")
+	res.Language = hdr.Header.Get("Content-Language")
+	hdr.Header.Del("Content-Language")
+	res.URI = hdr.Header.Get("Content-Location")
+	res.Misc = hdr.Header
+
+	res.Body = buf
+
 	return &res, nil
-}
-
-func (c *Client) downloadPartHeader(uid uint32, partIndex int) (message.Header, error) {
-	out := make(chan *eimap.Message, 1)
-	seqset := eimap.SeqSet{}
-	seqset.AddNum(uid)
-	err := c.cl.UidFetch(&seqset, []eimap.FetchItem{eimap.FetchItem("BODY.PEEK[" + strconv.Itoa(partIndex+1) + ".MIME]")}, out)
-	if err != nil {
-		return nil, err
-	}
-	msgHdr := <-out
-	for _, v := range msgHdr.Body {
-		m, err := message.Read(v)
-		if err != nil {
-			return nil, err
-		}
-		return m.Header, nil
-	}
-	return nil, errors.New("DownloadPart: no data returned by server")
-}
-
-func (c *Client) downloadPartBody(uid uint32, partIndex int) ([]byte, error) {
-	out := make(chan *eimap.Message, 1)
-	seqset := eimap.SeqSet{}
-	seqset.AddNum(uid)
-	err := c.cl.UidFetch(&seqset, []eimap.FetchItem{eimap.FetchItem("BODY.PEEK[" + strconv.Itoa(partIndex+1) + "]")}, out)
-	if err != nil {
-		return nil, err
-	}
-	msgBody := <-out
-	for _, v := range msgBody.Body {
-		buf := make([]byte, v.Len())
-		_, err := v.Read(buf)
-		return buf, err
-	}
-	return nil, errors.New("DownloadPart: no data returned by server")
 }

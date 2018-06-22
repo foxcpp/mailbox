@@ -82,5 +82,6 @@ func (c *Client) stopIdle() {
 }
 
 func (c *Client) resumeIdle() {
+	// TODO: Is constant goroutine restarting expensive?
 	go c.idleOnInbox()
 }

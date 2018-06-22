@@ -46,6 +46,7 @@ func (c *Client) GetDirs(accountId string) (StrSet, error) {
 	}
 
 	c.caches[accountId].dirs = resSet
+	c.caches[accountId].dirty = true
 	return resSet, nil
 }
 
@@ -118,6 +119,7 @@ func (c *Client) GetMsgsList(accountId, dirName string) ([]imap.MessageInfo, err
 		cpy := msg
 		c.caches[accountId].messagesByUid[dirName][msg.UID] = &cpy
 	}
+	c.caches[accountId].dirty = true
 
 	return list, nil
 }
@@ -134,22 +136,6 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32) (*common.Msg,
 	c.caches[accountId].lock.Lock()
 	defer c.caches[accountId].lock.Unlock()
 
-	data, prs := c.caches[accountId].messagesByUid[dirName][uid]
-	if prs && len(data.Msg.Parts) != 0 {
-		// Cache hit!
-		return &data.Msg, nil
-	}
-	if !prs {
-		Logger.Printf("Alert: Attempt to get message from directory without getting directory contents first. From where frontend knows message UID?\n")
-		// Force request so we will get valid data in cache.
-		_, err := c.GetMsgsList(accountId, dirName)
-		if err != nil {
-			return nil, err
-		}
-		// This will panic if UID is invalid.
-		data = c.caches[accountId].messagesByUid[dirName][uid]
-	}
-
 	Logger.Printf("Downloading message text for (%v, %v, %v)...\n", accountId, dirName, uid)
 	msg, err := c.imapConns[accountId].FetchPartialMail(dirName, uid, imap.TextOnly)
 	if err != nil {
@@ -158,10 +144,16 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32) (*common.Msg,
 	}
 
 	// Update information in cache.
-	data = msg
+	// TODO: Update other information.
+	c.caches[accountId].messagesByUid[dirName][uid].Msg.Parts = msg.Msg.Parts
+	c.caches[accountId].dirty = true
 
-	return &data.Msg, nil
+	return &c.caches[accountId].messagesByUid[dirName][uid].Msg, nil
 }
+
+//func (c *Client) DownloadAllMsgsText(accountId, dirName string) (*common.Msg, error) {
+//
+//}
 
 // GetMsgPart downloads message part specified by part index (literally index
 // of element in Parts slice got form GetMsgText).
@@ -171,10 +163,24 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32) (*common.Msg,
 // invalid account ID or directory name will lead to undefined behavior
 // (usually anic).
 func (c *Client) GetMsgPart(accountId, dirName string, uid uint32, partIndex int) (*common.Part, error) {
-	return c.imapConns[accountId].DownloadPart(uid, partIndex)
+	return c.imapConns[accountId].DownloadPart(dirName, uid, partIndex)
 }
 
 func (c *Client) ResolveUid(accountId, dir string, seqnum uint32) (uint32, error) {
 	//return c.caches[accountId].messagesByDir[dir][seqnum].UID, nil
 	return c.imapConns[accountId].ResolveUid(dir, seqnum)
+}
+
+func (c *Client) DownloadOfflineDirs(accountId string) {
+	Logger.Println("Downloading messages for offline use...")
+	for _, dir := range c.Accounts[accountId].Dirs.DownloadForOffline {
+		list, err := c.GetMsgsList(accountId, dir)
+		if err != nil {
+			return
+		}
+		for _, msg := range list {
+			c.GetMsgText(accountId, dir, msg.UID)
+		}
+		//c.DownloadAllMsgsText(accountId, dir)
+	}
 }

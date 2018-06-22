@@ -16,6 +16,10 @@ func (c *Client) FetchMaillist(dir string) ([]MessageInfo, error) {
 	}
 	defer c.cl.Close()
 
+	if mbox.Messages == 0 {
+		return []MessageInfo{}, nil
+	}
+
 	seqset := new(eimap.SeqSet)
 	seqset.AddRange(1, mbox.Messages)
 
@@ -48,6 +52,10 @@ func (c *Client) FetchPartialMaillist(dir string, count, offset uint32) ([]Messa
 	mbox, err := c.cl.Select(dir, true)
 	if err != nil {
 		return nil, err
+	}
+
+	if mbox.Messages == 0 {
+		return []MessageInfo{}, nil
 	}
 
 	seqset := eimap.SeqSet{}

@@ -24,7 +24,11 @@ type accountData struct {
 	// and do it pretty often.
 	messagesByDir map[string][]imap.MessageInfo
 
-	lock sync.Mutex
+	uidValidity map[string]uint32
+
+	dirty               bool
+	cacheFlusherStopSig chan bool
+	lock                sync.Mutex
 }
 
 // FrontendHooks provides a way for core to call into GUI for various needs
@@ -156,14 +160,14 @@ func (c *Client) prepareServerConfig(accountId string) {
 }
 
 func (c *Client) initCaches(accountId string) {
-	// TODO: We can actually write out caches sometime somewhere and read them in here.
-	// This way we will be able really speed up things.
-
 	c.caches[accountId] = &accountData{
-		dirs:          nil,
-		unreadCounts:  make(map[string]uint),
-		messagesByUid: make(map[string]map[uint32]*imap.MessageInfo),
-		messagesByDir: make(map[string][]imap.MessageInfo),
+		dirs:                nil,
+		unreadCounts:        make(map[string]uint),
+		messagesByUid:       make(map[string]map[uint32]*imap.MessageInfo),
+		messagesByDir:       make(map[string][]imap.MessageInfo),
+		uidValidity:         make(map[string]uint32),
+		dirty:               false,
+		cacheFlusherStopSig: make(chan bool),
 	}
 }
 
@@ -228,6 +232,7 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			msgsByDir = append(msgsByDir, *msg)
 			c.caches[accountId].messagesByUid[dir][msg.UID] = &msgsByDir[len(msgsByDir)-1]
 
+			c.caches[accountId].dirty = true
 			c.caches[accountId].lock.Unlock()
 
 			if c.Hooks.ResetDir != nil {
@@ -251,6 +256,7 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			c.caches[accountId].messagesByDir[dir] = remove(c.caches[accountId].messagesByDir[dir], int(seqnum-1))
 			delete(c.caches[accountId].messagesByUid[dir], uid)
 
+			c.caches[accountId].dirty = true
 			c.caches[accountId].lock.Unlock()
 
 			if c.Hooks.ResetDir != nil {
@@ -263,40 +269,29 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 	}
 }
 
-// flushCaches saves dirs information to cache file on disk to allow quick loading after restart.
-func (c *Client) flushCaches() error {
-	// TODO: Stub, we don't really have on-disk cache now.
-	Logger.Println("Flushing cache...")
-	return nil
-}
-
 func (c *Client) prefetchData(accountId string) error {
-	Logger.Println("Prefetching directories list for account", accountId+"...")
 	dirs, err := c.GetDirs(accountId)
 	if err != nil {
 		return err
 	}
 	Logger.Println("Directories:", dirs.List())
 
-	Logger.Println("Prefetching directories status for account", accountId+"...")
-	// Even though we ignore returned values - caches will
-	// be populated with needed data.
 	for _, dir := range c.caches[accountId].dirs.List() {
-		Logger.Println("Looking into", dir+"...")
-		count, err := c.GetUnreadCount(accountId, dir)
+		value, err := c.imapConns[accountId].UidValidity(dir)
 		if err != nil {
 			return err
 		}
-		Logger.Println(count, "unread messages in", dir)
+		c.caches[accountId].uidValidity[dir] = value
 	}
 
-	Logger.Println("Prefetching INBOX contents for account", accountId+"...")
-	// User will very likely first open INBOX, right?
-	list, err := c.GetMsgsList(accountId, "INBOX")
-	if err != nil {
-		return err
+	for _, dir := range c.caches[accountId].dirs.List() {
+		list, err := c.GetMsgsList(accountId, dir)
+		if err != nil {
+			return err
+		}
+		Logger.Println(len(list), "messages in", dir)
 	}
-	Logger.Println(len(list), "messages in INBOX")
+
 	return err
 }
 

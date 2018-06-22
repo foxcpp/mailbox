@@ -77,3 +77,23 @@ func (c *Client) ResolveUid(dir string, seqnum uint32) (uint32, error) {
 	}
 	return (<-out).Uid, nil
 }
+
+func (c *Client) ReplayUpdates(dir string) error {
+	// Just select and deselect mailbox, our update dispatcher will take care
+	// of updates.
+	_, err := c.cl.Select(dir, true)
+	if err != nil {
+		return err
+	}
+	c.cl.Close()
+	return nil
+}
+
+func (c *Client) UidValidity(dir string) (uint32, error) {
+	mbox, err := c.cl.Select(dir, true)
+	if err != nil {
+		return 0, err
+	}
+	defer c.cl.Close()
+	return mbox.UidValidity, nil
+}

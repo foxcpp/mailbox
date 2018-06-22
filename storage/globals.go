@@ -18,7 +18,7 @@ var GlobalCfgDefault = GlobalCfg{}
 
 func LoadGlobal() (*GlobalCfg, error) {
 	path := filepath.Join(GetDirectory(), "global.yml")
-	err := os.MkdirAll(GetDirectory(), os.ModePerm)
+	err := os.MkdirAll(GetDirectory(), 0700)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +30,7 @@ func LoadGlobal() (*GlobalCfg, error) {
 			panic(err)
 		}
 
-		ioutil.WriteFile(path, bytes, os.ModePerm)
+		ioutil.WriteFile(path, bytes, 0600)
 		return &GlobalCfgDefault, nil
 	}
 	if err != nil {

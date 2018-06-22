@@ -9,13 +9,21 @@ func (c *Client) AddAccount(name string, conf storage.AccountCfg, updateConfig b
 
 	c.prepareServerConfig(name)
 
+	c.initCaches(name)
+	c.loadFullCache(name)
+
 	err := c.connectToServer(name)
 	if err != nil {
 		return err
 	}
 
-	c.initCaches(name)
-	go c.prefetchData(name)
+	if len(c.caches[name].dirs.List()) == 0 {
+		go c.prefetchData(name)
+	} else {
+		go c.resyncFullCache(name)
+	}
+
+	go c.cacheFlusher(name)
 
 	if updateConfig {
 		Logger.Println("Writting configuration for account", name+"...")
@@ -25,6 +33,9 @@ func (c *Client) AddAccount(name string, conf storage.AccountCfg, updateConfig b
 }
 
 func (c *Client) RemoveAccount(name string, updateConfig bool) error {
+	c.caches[name].cacheFlusherStopSig <- true
+	<-c.caches[name].cacheFlusherStopSig
+
 	delete(c.caches, name)
 	delete(c.Accounts, name)
 	c.imapConns[name].Close()

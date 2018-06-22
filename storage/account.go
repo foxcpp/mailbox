@@ -31,9 +31,10 @@ type AccountCfg struct {
 		Pass string // IV + encrypted password actually
 	}
 	Dirs struct {
-		Drafts string
-		Sent   string
-		Trash  string
+		Drafts             string
+		Sent               string
+		Trash              string
+		DownloadForOffline []string
 	}
 	CopyToSent *bool
 }
@@ -72,6 +73,9 @@ func LoadAccount(name string) (*AccountCfg, error) {
 	if res.Dirs.Trash == "" {
 		res.Dirs.Trash = "Trash"
 	}
+	if res.Dirs.DownloadForOffline == nil {
+		res.Dirs.DownloadForOffline = []string{"INBOX"}
+	}
 	if res.CopyToSent == nil {
 		copyToSent := true
 		res.CopyToSent = &copyToSent
@@ -93,7 +97,7 @@ func basename(s string) string {
 
 func LoadAllAccounts() (map[string]AccountCfg, error) {
 	res := make(map[string]AccountCfg)
-	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), os.ModePerm)
+	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), 0700)
 	if err != nil {
 		return nil, fmt.Errorf("loadallaccounts: %v", err)
 	}
@@ -118,7 +122,7 @@ func LoadAllAccounts() (map[string]AccountCfg, error) {
 func SaveAccount(name string, conf AccountCfg) error {
 	path := filepath.Join(GetDirectory(), "accounts", name+".yml")
 
-	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), os.ModePerm)
+	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), 0700)
 	if err != nil {
 		return fmt.Errorf("saveaccount %v: %v", name, err)
 	}
@@ -128,13 +132,13 @@ func SaveAccount(name string, conf AccountCfg) error {
 		return fmt.Errorf("saveaccount %v: %v", name, err)
 	}
 
-	return ioutil.WriteFile(path, bytes, os.ModePerm)
+	return ioutil.WriteFile(path, bytes, 0600)
 }
 
 func DeleteAccount(name string) error {
 	path := filepath.Join(GetDirectory(), "accounts", name+".yml")
 
-	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), os.ModePerm)
+	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), 0700)
 	if err != nil {
 		return fmt.Errorf("deleteaccount %v: %v", name, err)
 	}
