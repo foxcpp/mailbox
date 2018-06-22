@@ -19,7 +19,7 @@ func (c *Client) loadFullCache(accountId string) {
 
 func (c *Client) loadCache(accountId, dir string) {
 	Logger.Printf("Loading cache for dir %v on account %v...\n", dir, accountId)
-	uidvalidity, msgs, err := storage.ReadCache(accountId, dir)
+	uidvalidity, msgs, err := storage.ReadCache(accountId, dir, c.DecryptUsingMaster)
 	if err != nil {
 		Logger.Printf("Failed to read cache for dir %v on account %v: %v\n", dir, accountId, err)
 		return
@@ -79,7 +79,7 @@ func (c *Client) saveCache(accountId, dir string) error {
 	defer c.caches[accountId].lock.Unlock()
 
 	Logger.Printf("Saving cache for dir %v on account %v...\n", dir, accountId)
-	err := storage.WriteCache(accountId, dir, c.caches[accountId].uidValidity[dir], c.caches[accountId].messagesByDir[dir])
+	err := storage.WriteCache(accountId, dir, c.caches[accountId].uidValidity[dir], c.caches[accountId].messagesByDir[dir], c.EncryptUsingMaster)
 	if err != nil {
 		Logger.Printf("Failed to save cache for dir %v on account %v: %v\n", dir, accountId, err)
 	}

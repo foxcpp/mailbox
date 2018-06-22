@@ -29,9 +29,14 @@ type CacheFormat struct {
 	Msgs        []imap.MessageInfo
 }
 
-func ReadCache(accountId, dir string) (uidvalidity uint32, msgs []imap.MessageInfo, err error) {
+func ReadCache(accountId, dir string, decrypt func([]byte) ([]byte, error)) (uidvalidity uint32, msgs []imap.MessageInfo, err error) {
 	path := filepath.Join(GetDirectory(), "cache", accountId, dir+".messages")
 	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	data, err = decrypt(data)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -43,7 +48,7 @@ func ReadCache(accountId, dir string) (uidvalidity uint32, msgs []imap.MessageIn
 	return res.UidValidity, res.Msgs, err
 }
 
-func WriteCache(accountId, dir string, uidValidity uint32, msgs []imap.MessageInfo) error {
+func WriteCache(accountId, dir string, uidValidity uint32, msgs []imap.MessageInfo, encrypt func([]byte) []byte) error {
 	path := filepath.Join(GetDirectory(), "cache", accountId, dir+".messages")
 	err := os.MkdirAll(filepath.Join(GetDirectory(), "cache", accountId), 0700)
 	if err != nil {
@@ -60,7 +65,7 @@ func WriteCache(accountId, dir string, uidValidity uint32, msgs []imap.MessageIn
 		return err
 	}
 
-	return ioutil.WriteFile(path, buf, 0600)
+	return ioutil.WriteFile(path, encrypt(buf), 0600)
 }
 
 func RemoveSavedCache(accountId, dir string) error {

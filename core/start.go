@@ -136,7 +136,13 @@ func (c *Client) prepareServerConfig(accountId string) {
 
 	info := c.Accounts[accountId]
 
-	pass := info.Credentials.Pass // TODO: Decryption should occur here.
+	pass := ""
+	passBytes, err := c.DecryptUsingMaster([]byte(info.Credentials.Pass))
+	if err != nil {
+		pass = ""
+	} else {
+		pass = string(passBytes)
+	}
 	if pass == "" && c.Hooks.PasswordPrompt != nil {
 		pass = c.Hooks.PasswordPrompt("Enter password for " + info.SenderEmail + ":")
 	}
