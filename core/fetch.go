@@ -96,11 +96,15 @@ func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
 // Function arguments are NOT checked for validity, invalid account ID or
 // directory name will lead to undefined behavior (usually panic).
 func (c *Client) GetMsgsList(accountId, dirName string) ([]imap.MessageInfo, error) {
+	return c.getMsgsList(accountId, dirName, false)
+}
+
+func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]imap.MessageInfo, error) {
 	c.caches[accountId].lock.Lock()
 	defer c.caches[accountId].lock.Unlock()
 
 	list, prs := c.caches[accountId].messagesByDir[dirName]
-	if prs {
+	if prs && !forceDownload {
 		// Cache hit!
 		return list, nil
 	}
@@ -113,11 +117,15 @@ func (c *Client) GetMsgsList(accountId, dirName string) ([]imap.MessageInfo, err
 		return nil, fmt.Errorf("msgslist %v, %v: %v", accountId, dirName, err)
 	}
 
+	oldMsgsByUid := c.caches[accountId].messagesByUid[dirName]
+
 	c.caches[accountId].messagesByDir[dirName] = list
 	c.caches[accountId].messagesByUid[dirName] = make(map[uint32]*imap.MessageInfo)
-	for _, msg := range list {
-		cpy := msg
-		c.caches[accountId].messagesByUid[dirName][msg.UID] = &cpy
+	for i, msg := range list {
+		c.caches[accountId].messagesByUid[dirName][msg.UID] = &list[i]
+		if oldMsg, prs := oldMsgsByUid[msg.UID]; prs {
+			c.caches[accountId].messagesByUid[dirName][msg.UID].Msg.Parts = oldMsg.Msg.Parts
+		}
 	}
 	c.caches[accountId].dirty = true
 
@@ -128,13 +136,19 @@ func (c *Client) GetMsgsList(accountId, dirName string) ([]imap.MessageInfo, err
 // GetMsgsList does) + text parts (with MIME type text/*). Information about
 // non-text parts is present but Body slice is nil.
 //
-// Returned value is cached (but only in memory, but on disk), it's fine to
+// Returned value is cached if allowOutdated is true, it's fine to
 // call it repeatly. Function arguments are NOT checked for validity, invalid
 // account ID or directory name will lead to undefined behavior (usually
 // panic).
-func (c *Client) GetMsgText(accountId, dirName string, uid uint32) (*common.Msg, error) {
+func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated bool) (*common.Msg, error) {
 	c.caches[accountId].lock.Lock()
 	defer c.caches[accountId].lock.Unlock()
+
+	if allowOutdated {
+		if msg, prs := c.caches[accountId].messagesByUid[dirName][uid]; prs && len(msg.Msg.Parts) != 0 {
+			return &msg.Msg, nil
+		}
+	}
 
 	Logger.Printf("Downloading message text for (%v, %v, %v)...\n", accountId, dirName, uid)
 	msg, err := c.imapConns[accountId].FetchPartialMail(dirName, uid, imap.TextOnly)
@@ -150,10 +164,6 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32) (*common.Msg,
 
 	return &c.caches[accountId].messagesByUid[dirName][uid].Msg, nil
 }
-
-//func (c *Client) DownloadAllMsgsText(accountId, dirName string) (*common.Msg, error) {
-//
-//}
 
 // GetMsgPart downloads message part specified by part index (literally index
 // of element in Parts slice got form GetMsgText).
@@ -179,8 +189,7 @@ func (c *Client) DownloadOfflineDirs(accountId string) {
 			return
 		}
 		for _, msg := range list {
-			c.GetMsgText(accountId, dir, msg.UID)
+			c.GetMsgText(accountId, dir, msg.UID, true)
 		}
-		//c.DownloadAllMsgsText(accountId, dir)
 	}
 }

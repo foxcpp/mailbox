@@ -2,7 +2,6 @@ package imap
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 
 	eimap "github.com/emersion/go-imap"
@@ -125,8 +124,6 @@ func (c *Client) downloadPart(uid uint32, partIndex int) (*common.Part, error) {
 			// Parse message body.
 			buf = make([]byte, v.Len())
 			v.Read(buf)
-		} else {
-			fmt.Println("THE FUCK:", name.FetchItem(), headerFI, bodyFI)
 		}
 	}
 

@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sync"
 
 	eimap "github.com/emersion/go-imap"
 	"github.com/foxcpp/mailbox/proto/common"
 	"github.com/foxcpp/mailbox/proto/imap"
 	"github.com/foxcpp/mailbox/storage"
+	deadlock "github.com/sasha-s/go-deadlock"
 )
 
 func remove(s []imap.MessageInfo, i int) []imap.MessageInfo {
@@ -28,7 +28,7 @@ type accountData struct {
 
 	dirty               bool
 	cacheFlusherStopSig chan bool
-	lock                sync.Mutex
+	lock                deadlock.Mutex
 }
 
 // FrontendHooks provides a way for core to call into GUI for various needs
@@ -285,14 +285,19 @@ func (c *Client) prefetchData(accountId string) error {
 	}
 
 	for _, dir := range c.caches[accountId].dirs.List() {
-		list, err := c.GetMsgsList(accountId, dir)
-		if err != nil {
-			return err
-		}
-		Logger.Println(len(list), "messages in", dir)
+		err = c.prefetchDirData(accountId, dir)
 	}
 
 	return err
+}
+
+func (c *Client) prefetchDirData(accountId, dir string) error {
+	list, err := c.getMsgsList(accountId, dir, true)
+	if err != nil {
+		return err
+	}
+	Logger.Println(len(list), "messages in", dir)
+	return nil
 }
 
 func (c *Client) reloadMaillist(accountId string, dir string) {

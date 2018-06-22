@@ -62,3 +62,7 @@ func WriteCache(accountId, dir string, uidValidity uint32, msgs []imap.MessageIn
 
 	return ioutil.WriteFile(path, buf, 0600)
 }
+
+func RemoveSavedCache(accountId, dir string) error {
+	return os.Remove(filepath.Join(GetDirectory(), "cache", accountId, dir+".messages"))
+}

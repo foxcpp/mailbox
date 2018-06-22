@@ -28,11 +28,8 @@ func (c *Client) loadCache(accountId, dir string) {
 	c.caches[accountId].uidValidity[dir] = uidvalidity
 	c.caches[accountId].messagesByDir[dir] = msgs
 	c.caches[accountId].messagesByUid[dir] = make(map[uint32]*imap.MessageInfo)
-	for i, _ := range msgs {
-		// This is done to ensure that there is exactly one copy
-		// of message stored in memory.
-		msg := &c.caches[accountId].messagesByDir[dir][i]
-		c.caches[accountId].messagesByUid[dir][msg.UID] = msg
+	for i, msg := range msgs {
+		c.caches[accountId].messagesByUid[dir][msg.UID] = &c.caches[accountId].messagesByDir[dir][i]
 	}
 	c.caches[accountId].dirty = false
 	Logger.Println(len(msgs), "messages in dir", dir)
@@ -45,27 +42,25 @@ func (c *Client) resyncFullCache(accountId string) {
 }
 
 func (c *Client) resyncCache(accountId, dir string) {
-	Logger.Printf("Synchronizing cache for dir %v on account %v...\n", dir, accountId)
-
-	uidvalidity, err := c.imapConns[accountId].UidValidity(dir)
+	curUidVal, err := c.imapConns[accountId].UidValidity(dir)
 	if err != nil {
-		Logger.Printf("Failed to get UIDVALIDITY for %v on %v, asumming that cache is valid: %v\n", dir, accountId, err)
+		// This likely means that this directory doesn't exists anymore, remove it from cache.
+		c.caches[accountId].dirs.Remove(dir)
+		delete(c.caches[accountId].uidValidity, dir)
+		delete(c.caches[accountId].messagesByDir, dir)
+		delete(c.caches[accountId].messagesByDir, dir)
+		delete(c.caches[accountId].unreadCounts, dir)
+		storage.RemoveSavedCache(accountId, dir)
 		return
 	}
-	if uidvalidity != c.caches[accountId].uidValidity[dir] {
-		Logger.Println(uidvalidity, c.caches[accountId].uidValidity[dir])
+	if c.caches[accountId].uidValidity[dir] != curUidVal {
 		Logger.Printf("UIDVALIDITY value changed, discarding cache for directory %v on account %v\n", dir, accountId)
-		c.caches[accountId].lock.Lock()
-		delete(c.caches[accountId].messagesByDir, dir)
-		delete(c.caches[accountId].messagesByUid, dir)
-		c.caches[accountId].lock.Unlock()
-		go c.prefetchData(accountId)
-		return
+		c.caches[accountId].uidValidity[dir] = curUidVal
+		c.caches[accountId].messagesByDir[dir] = []imap.MessageInfo{}
+		c.caches[accountId].messagesByUid[dir] = make(map[uint32]*imap.MessageInfo)
 	}
 
-	// This will ask proto/imap to give us new messages.
-	c.imapConns[accountId].KnownMailboxSizes[dir] = uint32(len(c.caches[accountId].messagesByDir[dir]))
-	c.imapConns[accountId].ReplayUpdates(dir)
+	c.prefetchDirData(accountId, dir)
 }
 
 func (c *Client) saveFullCache(accountId string) error {

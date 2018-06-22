@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/mail"
-	"os"
 	"strings"
 	"time"
 
@@ -122,7 +121,6 @@ func writeMultipart(m *Msg, hdrs message.Header, out io.Writer) error {
 		}
 
 		partHdrs.Set("Content-Transfer-Encoding", pickEncoding(part.Body))
-		fmt.Fprintln(os.Stderr, "PICKED:", partHdrs.Get("Content-Transfer-Encoding"))
 		if _, prs := partHdrs["Content-Type"]; !prs {
 			partHdrs.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
 		}
@@ -153,7 +151,6 @@ func pickEncoding(body []byte) string {
 	if ascii == len(body) {
 		return "7bit"
 	}
-	fmt.Fprintln(os.Stderr, "PICK:", ascii, len(body), float64(ascii)/float64(len(body)))
 	if float64(ascii)/float64(len(body)) > 0.75 {
 		return "quoted-printable"
 	}
