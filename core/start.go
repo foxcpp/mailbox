@@ -1,15 +1,17 @@
 package core
 
 import (
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	eimap "github.com/emersion/go-imap"
 	"github.com/foxcpp/mailbox/proto/common"
 	"github.com/foxcpp/mailbox/proto/imap"
 	"github.com/foxcpp/mailbox/storage"
-	deadlock "github.com/sasha-s/go-deadlock"
 )
 
 func remove(s []imap.MessageInfo, i int) []imap.MessageInfo {
@@ -28,7 +30,7 @@ type accountData struct {
 
 	dirty               bool
 	cacheFlusherStopSig chan bool
-	lock                deadlock.Mutex
+	lock                sync.Mutex
 }
 
 // FrontendHooks provides a way for core to call into GUI for various needs
@@ -58,6 +60,7 @@ type Client struct {
 	SkippedAccounts []AccountError
 	Hooks           FrontendHooks
 
+	masterKey []byte
 	Accounts  map[string]storage.AccountCfg
 	GlobalCfg storage.GlobalCfg
 
@@ -97,6 +100,18 @@ func Launch(hooks FrontendHooks) (*Client, error) {
 		return nil, err
 	}
 
+	mpass := ""
+	if *res.GlobalCfg.Encryption.UseMasterPass {
+		mpass = hooks.PasswordPrompt("Enter master password: ")
+		if mpass == "" {
+			return nil, errors.New("launch: password prompt rejected")
+		}
+	}
+	err = res.prepareMasterKey("")
+	if err != nil {
+		return nil, errors.New("launch: failed to prepare master key")
+	}
+
 	res.serverCfgs = make(map[string]struct {
 		imap, smtp common.ServConfig
 	})
@@ -112,6 +127,9 @@ func Launch(hooks FrontendHooks) (*Client, error) {
 			res.SkippedAccounts = append(res.SkippedAccounts, *err)
 		}
 	}
+
+	// Save new config, in case something changed something.
+	storage.SaveGlobal(&res.GlobalCfg)
 
 	return res, nil
 }
@@ -137,11 +155,17 @@ func (c *Client) prepareServerConfig(accountId string) {
 	info := c.Accounts[accountId]
 
 	pass := ""
-	passBytes, err := c.DecryptUsingMaster([]byte(info.Credentials.Pass))
-	if err != nil {
-		pass = ""
-	} else {
-		pass = string(passBytes)
+	if len(info.Credentials.Pass) != 0 {
+		encPass, err := hex.DecodeString(info.Credentials.Pass)
+		if err != nil {
+			pass = ""
+		}
+		passBytes, err := c.DecryptUsingMaster(encPass)
+		if err != nil {
+			pass = ""
+		} else {
+			pass = string(passBytes)
+		}
 	}
 	if pass == "" && c.Hooks.PasswordPrompt != nil {
 		pass = c.Hooks.PasswordPrompt("Enter password for " + info.SenderEmail + ":")

@@ -12,6 +12,10 @@ type GlobalCfg struct {
 	Connection struct {
 		MaxTries uint `yaml:"max_tries"`
 	} `yaml:"connection"`
+	Encryption struct {
+		UseMasterPass *bool
+		MasterKeySalt string
+	}
 }
 
 var GlobalCfgDefault = GlobalCfg{}
@@ -24,20 +28,46 @@ func LoadGlobal() (*GlobalCfg, error) {
 	}
 
 	data, err := ioutil.ReadFile(path)
+	res := GlobalCfg{}
 	if os.IsNotExist(err) {
-		bytes, err := yaml.Marshal(GlobalCfgDefault)
+		bytes, err := yaml.Marshal(res)
 		if err != nil {
 			panic(err)
 		}
 
 		ioutil.WriteFile(path, bytes, 0600)
-		return &GlobalCfgDefault, nil
-	}
-	if err != nil {
-		return nil, err
+	} else {
+		if err != nil {
+			return nil, err
+		}
+
+		res = GlobalCfg{}
+		err = yaml.Unmarshal(data, &res)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	res := GlobalCfg{}
-	err = yaml.Unmarshal(data, &res)
-	return &res, err
+	// Set default values here.
+	if res.Encryption.UseMasterPass == nil {
+		f := false
+		res.Encryption.UseMasterPass = &f
+	}
+
+	return &res, nil
+}
+
+func SaveGlobal(cfg *GlobalCfg) error {
+	path := filepath.Join(GetDirectory(), "global.yml")
+	err := os.MkdirAll(GetDirectory(), 0700)
+	if err != nil {
+		return err
+	}
+
+	bytes, err := yaml.Marshal(*cfg)
+	if err != nil {
+		panic(err)
+	}
+
+	return ioutil.WriteFile(path, bytes, 0600)
 }
