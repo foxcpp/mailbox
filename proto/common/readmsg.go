@@ -71,6 +71,7 @@ func readBody(res *Msg, m *message.Entity) error {
 			if err != nil {
 				return err
 			}
+			outPart.Size = uint32(len(outPart.Body))
 			part.Header.Del("Content-Type")
 			outPart.Misc = part.Header
 
@@ -85,6 +86,7 @@ func readBody(res *Msg, m *message.Entity) error {
 		if err != nil {
 			return err
 		}
+		outPart.Size = uint32(len(outPart.Body))
 
 		res.Parts = append(res.Parts, outPart)
 	}

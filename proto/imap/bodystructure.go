@@ -14,13 +14,14 @@ func bodyStructToPart(s imap.BodyStructure) (res common.Part) {
 		s.Params,
 	}
 	res.Misc = make(message.Header)
+	res.Size = s.Size
 	if s.Extended {
 		res.Disposition.Value, res.Disposition.Params = s.Disposition, s.DispositionParams
 		if len(s.Language) >= 1 {
-			res.Language = s.Language[0]
+			res.Misc.Add("Content-Language", s.Language[0])
 		}
 		if len(s.Location) >= 1 {
-			res.URI = s.Location[0]
+			res.Misc.Add("Content-Location", s.Location[0])
 		}
 	}
 	return res

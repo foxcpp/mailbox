@@ -17,10 +17,11 @@ type ParametrizedHeader struct {
 type Part struct {
 	Type        ParametrizedHeader
 	Disposition ParametrizedHeader
-	Language    string
-	URI         string
+	Size        uint32
 	Misc        message.Header
-	Body        []byte
+
+	// Note, can be null, use CacheDB to request cached bodies for parts.
+	Body []byte
 }
 
 // Msg struct represents a parsed E-Mail message.
