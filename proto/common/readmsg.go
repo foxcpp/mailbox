@@ -32,11 +32,11 @@ func readHeaders(res *Msg, m *message.Entity) error {
 
 	from, _ := mail.ParseAddress(m.Header.Get("From"))
 	if from != nil {
-		res.From = *from
+		res.From = Address(*from)
 	}
 	replyTo, _ := mail.ParseAddress(m.Header.Get("Reply-To"))
 	if replyTo != nil {
-		res.ReplyTo = *replyTo
+		res.ReplyTo = Address(*replyTo)
 	}
 	res.To, _ = ConvertAddrList(mail.ParseAddressList(m.Header.Get("To")))
 	res.Cc, _ = ConvertAddrList(mail.ParseAddressList(m.Header.Get("Cc")))
@@ -49,7 +49,7 @@ func readHeaders(res *Msg, m *message.Entity) error {
 	delete(m.Header, "To")
 	delete(m.Header, "Cc")
 	delete(m.Header, "Bcc")
-	res.Misc = m.Header
+	res.Misc = Header(m.Header)
 	return nil
 }
 
@@ -73,7 +73,7 @@ func readBody(res *Msg, m *message.Entity) error {
 			}
 			outPart.Size = uint32(len(outPart.Body))
 			part.Header.Del("Content-Type")
-			outPart.Misc = part.Header
+			outPart.Misc = Header(part.Header)
 
 			res.Parts = append(res.Parts, outPart)
 		}

@@ -3,14 +3,13 @@ package common
 import (
 	"fmt"
 	"io"
-	"net/mail"
 	"strings"
 	"time"
 
 	message "github.com/emersion/go-message"
 )
 
-func MarshalAddressList(in []mail.Address) string {
+func MarshalAddressList(in []Address) string {
 	addrStrs := []string{}
 	for _, addr := range in {
 		addrStrs = append(addrStrs, MarshalAddress(addr))
@@ -18,7 +17,7 @@ func MarshalAddressList(in []mail.Address) string {
 	return strings.Join(addrStrs, ", ")
 }
 
-func MarshalAddress(addr mail.Address) string {
+func MarshalAddress(addr Address) string {
 	return strings.TrimSpace(fmt.Sprintf("%v <%v>", addr.Name, addr.Address))
 }
 

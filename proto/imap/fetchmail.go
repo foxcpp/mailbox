@@ -134,7 +134,7 @@ func (c *Client) downloadPart(uid uint32, partIndex int) (*common.Part, error) {
 	hdr.Header.Del("Content-Type")
 	res.Disposition.Value, res.Disposition.Params, _ = hdr.Header.ContentDisposition()
 	hdr.Header.Del("Content-Disposition")
-	res.Misc = hdr.Header
+	res.Misc = common.Header(hdr.Header)
 
 	res.Body = buf
 

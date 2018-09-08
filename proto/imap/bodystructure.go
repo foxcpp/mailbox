@@ -2,7 +2,6 @@ package imap
 
 import (
 	imap "github.com/emersion/go-imap"
-	message "github.com/emersion/go-message"
 	"github.com/foxcpp/mailbox/proto/common"
 )
 
@@ -13,7 +12,7 @@ func bodyStructToPart(s imap.BodyStructure) (res common.Part) {
 		s.MIMEType + "/" + s.MIMESubType,
 		s.Params,
 	}
-	res.Misc = make(message.Header)
+	res.Misc = make(common.Header)
 	res.Size = s.Size
 	if s.Extended {
 		res.Disposition.Value, res.Disposition.Params = s.Disposition, s.DispositionParams
