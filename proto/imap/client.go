@@ -78,7 +78,7 @@ func starttlsHandshake(conn net.Conn, hostname string) (*client.Client, error) {
 	return c, nil
 }
 
-func Connect(target common.ServConfig) (*Client, error) {
+func connect(target common.ServConfig) (*client.Client, error) {
 	addr := target.Host + ":" + strconv.Itoa(int(target.Port))
 
 	conn, err := net.Dial("tcp", addr)
@@ -109,11 +109,19 @@ func Connect(target common.ServConfig) (*Client, error) {
 
 	// 30 timeout for any I/O.
 	c.Timeout = 30 * time.Second
+	return c, nil
+}
+
+func Connect(target common.ServConfig) (*Client, error) {
+	c, err := connect(target)
+	if err != nil {
+		return nil, err
+	}
 
 	res := &Client{cl: c}
 	// We have that small buffer to prevent updates queue from being filled
 	// with updates from different mailboxes, as this will break a lot of things.
-	res.updates = make(chan client.Update, 32)
+	res.updates = make(chan client.Update, 16)
 	res.idlerInterrupt = make(chan bool)
 	res.updatesDispatcherStop = make(chan bool)
 	res.KnownMailboxSizes = make(map[string]uint32)
@@ -139,6 +147,23 @@ func (c *Client) Auth(conf common.ServConfig) error {
 	if err == nil {
 		go c.idleOnInbox()
 	}
+	return err
+}
+
+// Reconnectrecovers lost connection.
+// Note: If this function fails connection will be left in closed ("null") state.
+func (c *Client) Reconnect(target common.ServConfig) error {
+	// Exactly that order to prevent deadlock (IDLE goroutine locks IOLock so we need to stop it before locking).
+	c.updatesDispatcherStop <- true
+	<-c.updatesDispatcherStop
+	c.idlerInterrupt <- true
+	c.IOLock.Lock()
+	<-c.idlerInterrupt
+	defer c.IOLock.Unlock()
+
+	c.cl = nil
+	var err error
+	c.cl, err = connect(target)
 	return err
 }
 

@@ -173,7 +173,13 @@ func (c *Client) connectToServer(accountId string) *AccountError {
 	var err error
 
 	if c.imapConns[accountId] != nil {
-		c.imapConns[accountId].Close()
+		if err := c.imapConns[accountId].Reconnect(c.serverCfgs[accountId].imap); err != nil {
+			return &AccountError{accountId, err}
+		}
+		if err := c.imapConns[accountId].Auth(c.serverCfgs[accountId].imap); err != nil {
+			return &AccountError{accountId, err}
+		}
+		return nil
 	}
 
 	Logger.Printf("Connecting to IMAP server (%v:%v)...\n",
@@ -220,8 +226,14 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			}
 			// If this thing really should go to the end of slice...
 
-			// XXX: LOSING CONNECTION HERE WILL LEAD TO CRASH.
-			msg, err := c.imapConns[accountId].FetchPartialMail(dir, uid, imap.TextOnly)
+			var msg *imap.MessageInfo
+			for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
+				msg, err = c.imapConns[accountId].FetchPartialMail(dir, uid, imap.TextOnly)
+				if err == nil || !connectionError(err) {
+					break
+				}
+				err = c.connectToServer(accountId)
+			}
 			if err != nil {
 				Logger.Println("Alert: Reloading message list: failed to download message:", err)
 				c.reloadMaillist(accountId, dir)
@@ -288,7 +300,13 @@ func (c *Client) prefetchData(accountId string) error {
 		if err != nil {
 			return err
 		}
-		c.caches[accountId].Dir(dir).SetUidValidity(value)
+
+		cacheVal, err := c.caches[accountId].Dir(dir).UidValidity()
+		if cacheVal != value || err == storage.ErrNullValue {
+			c.caches[accountId].Dir(dir).InvalidateMsglist()
+			c.caches[accountId].Dir(dir).SetUidValidity(value)
+		}
+
 	}
 
 	for _, dir := range dirs.List() {

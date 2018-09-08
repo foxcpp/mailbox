@@ -21,9 +21,7 @@ func (c *Client) AddAccount(name string, conf storage.AccountCfg, updateConfig b
 	if dberr != nil {
 		return &AccountError{name, err}
 	}
-	if lst, err := c.caches[name].DirList(); err == nil || len(lst) == 0 {
-		c.prefetchData(name)
-	}
+	c.prefetchData(name)
 
 	if updateConfig {
 		Logger.Println("Writting configuration for account", name+"...")

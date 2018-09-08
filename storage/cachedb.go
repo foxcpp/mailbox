@@ -772,6 +772,7 @@ func readPartInfo(out *imap.MessageInfo, in *sql.Rows) error {
 	return nil
 }
 
+// InvalidateMsglist resets UIDVALIDITY, unreadcounts and remove all messages from cache.
 func (d *Dirwrapper) InvalidateMsglist() error {
 	tx, err := d.parent.d.Begin()
 	if err != nil {

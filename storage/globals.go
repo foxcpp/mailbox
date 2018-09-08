@@ -10,7 +10,7 @@ import (
 
 type GlobalCfg struct {
 	Connection struct {
-		MaxTries *int `yaml:"max_tries"`
+		MaxTries *int `yaml:"maxtries"`
 	} `yaml:"connection"`
 	Encryption struct {
 		UseMasterPass *bool

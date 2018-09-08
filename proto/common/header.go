@@ -7,7 +7,6 @@ import (
 )
 
 func ReadHeader(in []byte) (Header, error) {
-	// XXX: Will it parse headers **without** body correctly?
 	hdrsR := bytes.NewReader(in)
 	entity, err := message.Read(hdrsR)
 	if err != nil {

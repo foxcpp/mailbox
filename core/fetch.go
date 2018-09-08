@@ -190,9 +190,8 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated
 	}
 
 	// Update information in cache.
-	// XXX: THIS BREAKS SEQUENCE NUMBER ORDERING BY MOVING MESSAGES TO END OF THE LIST. FIX IT NOW.
-	if err := c.caches[accountId].Dir(dirName).AddMsg(msg); err != nil {
-		Logger.Println("Cache AddMsg:", err)
+	if err := c.caches[accountId].Dir(dirName).ReplacePartList(msg.UID, msg.Parts); err != nil {
+		Logger.Println("Cache ReplacePartList:", err)
 	}
 
 	return msg, nil
