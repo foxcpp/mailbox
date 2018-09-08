@@ -276,7 +276,7 @@ func (c *Client) prefetchData(accountId string) error {
 	for _, dir := range dirs.List() {
 		var value uint32
 		var err error
-		for i := 0; i < 5; i++ {
+		for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 			value, err = c.imapConns[accountId].UidValidity(dir)
 			if err == nil || !connectionError(err) {
 				break

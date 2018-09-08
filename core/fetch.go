@@ -40,7 +40,7 @@ func (c *Client) GetDirs(accountId string) (StrSet, error) {
 	Logger.Printf("Downloading directories list for %v...\n", accountId)
 	// Cache miss, go and ask server.
 	var separator string
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		separator, list, err = c.imapConns[accountId].DirList()
 		if err == nil || !connectionError(err) {
 			break
@@ -88,7 +88,7 @@ func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
 	}
 
 	// Cache miss, go and ask server.
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		_, count, err = c.imapConns[accountId].DirStatus(c.rawDirName(dirName))
 		if err == nil || !connectionError(err) {
 			break
@@ -133,7 +133,7 @@ func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]i
 	// Cache miss, go and ask server.
 	var list []imap.MessageInfo
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		list, err = c.imapConns[accountId].FetchMaillist(c.rawDirName(dirName))
 		if err == nil || !connectionError(err) {
 			break
@@ -175,7 +175,7 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated
 	Logger.Printf("Downloading message text for (%v, %v, %v)...\n", accountId, dirName, uid)
 	var msg *imap.MessageInfo
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		msg, err = c.imapConns[accountId].FetchPartialMail(dirName, uid, imap.TextOnly)
 		if err == nil || !connectionError(err) {
 			break
@@ -208,7 +208,7 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated
 func (c *Client) GetMsgPart(accountId, dirName string, uid uint32, partIndex int) (*common.Part, error) {
 	var prt *common.Part
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		prt, err = c.imapConns[accountId].DownloadPart(dirName, uid, partIndex)
 		if err == nil || !connectionError(err) {
 			break
@@ -223,7 +223,7 @@ func (c *Client) GetMsgPart(accountId, dirName string, uid uint32, partIndex int
 func (c *Client) ResolveUid(accountId, dir string, seqnum uint32) (uint32, error) {
 	var uid uint32
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		uid, err = c.imapConns[accountId].ResolveUid(dir, seqnum)
 		if err == nil || !connectionError(err) {
 			break

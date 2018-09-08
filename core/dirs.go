@@ -13,7 +13,7 @@ func (c *Client) CreateDir(accountId, parentDir, newDir string) error {
 	Logger.Printf("Creating directory (%v, %v, %v)...\n", accountId, parentDir, newDir)
 
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		err = c.imapConns[accountId].CreateDir(c.rawDirName(c.joinWithParentDir(parentDir, newDir)))
 		if err == nil || !connectionError(err) {
 			break
@@ -35,7 +35,8 @@ func (c *Client) RemoveDir(accountId, parentDir, dir string) error {
 	dirName := c.joinWithParentDir(parentDir, dir)
 
 	var err error
-	for i := 0; i < 5; i++ {
+
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		err = c.imapConns[accountId].RemoveDir(c.rawDirName(dirName))
 		if err == nil || !connectionError(err) {
 			break
@@ -60,7 +61,7 @@ func (c *Client) MoveDir(accountId, oldParentDir, newParentDir, dir string) erro
 	toRaw := c.rawDirName(c.joinWithParentDir(newParentDir, dir))
 
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		err = c.imapConns[accountId].RenameDir(fromRaw, toRaw)
 		if err == nil || !connectionError(err) {
 			break
@@ -82,7 +83,7 @@ func (c *Client) RenameDir(accountId, oldName, newName string) error {
 	Logger.Printf("Renaming directory (%v, from %v to %v)...\n", accountId, oldName, newName)
 
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		err = c.imapConns[accountId].RenameDir(c.rawDirName(oldName), c.rawDirName(newName))
 		if err == nil || !connectionError(err) {
 			break

@@ -9,7 +9,7 @@ const (
 
 func (c *Client) Tag(accountId, dir string, tag Tag, uids ...uint32) error {
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		err = c.imapConns[accountId].Tag(dir, string(tag), uids...)
 		if err == nil || !connectionError(err) {
 			break
@@ -30,7 +30,7 @@ func (c *Client) Tag(accountId, dir string, tag Tag, uids ...uint32) error {
 
 func (c *Client) Untag(accountId, dir string, tag Tag, uids ...uint32) error {
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		err = c.imapConns[accountId].UnTag(dir, string(tag), uids...)
 		if err == nil || !connectionError(err) {
 			break

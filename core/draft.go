@@ -12,7 +12,7 @@ func (c *Client) SaveDraft(accountId string, draft *common.Msg) (uint32, error) 
 
 	var uid uint32
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		uid, err = c.imapConns[accountId].Create(draftDir, []string{`\Draft`}, time.Now(), draft)
 		if err == nil || !connectionError(err) {
 			break
@@ -36,7 +36,7 @@ func (c *Client) UpdateDraft(accountId string, oldUid uint32, new *common.Msg) (
 
 	var uid uint32
 	var err error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 		uid, err = c.imapConns[accountId].Replace(draftDir, oldUid, []string{`\Draft`}, time.Now(), new)
 		if err == nil || !connectionError(err) {
 			break
@@ -83,7 +83,7 @@ func (c *Client) SendMessage(accountId string, msg *common.Msg) (uint32, error) 
 	if *c.Accounts[accountId].CopyToSent {
 		var uid uint32
 		var err error
-		for i := 0; i < 5; i++ {
+		for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
 			uid, err = c.imapConns[accountId].Create(c.Accounts[accountId].Dirs.Sent, []string{`\Seen`}, time.Now(), msg)
 			if err == nil || !connectionError(err) {
 				break

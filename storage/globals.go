@@ -10,7 +10,7 @@ import (
 
 type GlobalCfg struct {
 	Connection struct {
-		MaxTries uint `yaml:"max_tries"`
+		MaxTries *int `yaml:"max_tries"`
 	} `yaml:"connection"`
 	Encryption struct {
 		UseMasterPass *bool
@@ -49,6 +49,10 @@ func LoadGlobal() (*GlobalCfg, error) {
 	}
 
 	// Set default values here.
+	if res.Connection.MaxTries == nil {
+		f := 5
+		res.Connection.MaxTries = &f
+	}
 	if res.Encryption.UseMasterPass == nil {
 		f := false
 		res.Encryption.UseMasterPass = &f
