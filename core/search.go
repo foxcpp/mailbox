@@ -71,7 +71,17 @@ func (c *Client) Search(accountId string, criteria SearchCriteria) ([]SearchResu
 	res := []SearchResult{}
 
 	for _, dir := range dirsToCheck {
-		matches, err := c.imapConns[accountId].Search(dir, criteria.toGoImap())
+		var matches []uint32
+		var err error
+		for i := 0; i < 5; i++ {
+			matches, err = c.imapConns[accountId].Search(dir, criteria.toGoImap())
+			if err == nil || !connectionError(err) {
+				break
+			}
+			if err := c.connectToServer(accountId); err != nil {
+				return nil, err
+			}
+		}
 		if err != nil {
 			return nil, err
 		}

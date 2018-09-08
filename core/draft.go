@@ -10,11 +10,22 @@ import (
 func (c *Client) SaveDraft(accountId string, draft *common.Msg) (uint32, error) {
 	draftDir := c.Accounts[accountId].Dirs.Drafts
 
-	uid, err := c.imapConns[accountId].Create(draftDir, []string{`\Draft`}, time.Now(), draft)
+	var uid uint32
+	var err error
+	for i := 0; i < 5; i++ {
+		uid, err = c.imapConns[accountId].Create(draftDir, []string{`\Draft`}, time.Now(), draft)
+		if err == nil || !connectionError(err) {
+			break
+		}
+		if err := c.connectToServer(accountId); err != nil {
+			return 0, err
+		}
+	}
 	if err != nil {
 		return 0, err
 	}
 
+	// Shouldn't we receive update which then will be handled by our code?
 	c.reloadMaillist(accountId, draftDir)
 
 	return uid, nil
@@ -23,7 +34,17 @@ func (c *Client) SaveDraft(accountId string, draft *common.Msg) (uint32, error) 
 func (c *Client) UpdateDraft(accountId string, oldUid uint32, new *common.Msg) (uint32, error) {
 	draftDir := c.Accounts[accountId].Dirs.Drafts
 
-	uid, err := c.imapConns[accountId].Replace(draftDir, oldUid, []string{`\Draft`}, time.Now(), new)
+	var uid uint32
+	var err error
+	for i := 0; i < 5; i++ {
+		uid, err = c.imapConns[accountId].Replace(draftDir, oldUid, []string{`\Draft`}, time.Now(), new)
+		if err == nil || !connectionError(err) {
+			break
+		}
+		if err := c.connectToServer(accountId); err != nil {
+			return 0, err
+		}
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -60,7 +81,17 @@ func (c *Client) SendMessage(accountId string, msg *common.Msg) (uint32, error) 
 	}
 
 	if *c.Accounts[accountId].CopyToSent {
-		uid, err := c.imapConns[accountId].Create(c.Accounts[accountId].Dirs.Sent, []string{`\Seen`}, time.Now(), msg)
+		var uid uint32
+		var err error
+		for i := 0; i < 5; i++ {
+			uid, err = c.imapConns[accountId].Create(c.Accounts[accountId].Dirs.Sent, []string{`\Seen`}, time.Now(), msg)
+			if err == nil || !connectionError(err) {
+				break
+			}
+			if err := c.connectToServer(accountId); err != nil {
+				return 0, err
+			}
+		}
 		if err != nil {
 			Logger.Printf("Failed to copy message to Sent (%v) directory: %v", c.Accounts[accountId].Dirs.Sent, err)
 		}

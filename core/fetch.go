@@ -39,7 +39,16 @@ func (c *Client) GetDirs(accountId string) (StrSet, error) {
 
 	Logger.Printf("Downloading directories list for %v...\n", accountId)
 	// Cache miss, go and ask server.
-	separator, list, err := c.imapConns[accountId].DirList()
+	var separator string
+	for i := 0; i < 5; i++ {
+		separator, list, err = c.imapConns[accountId].DirList()
+		if err == nil || !connectionError(err) {
+			break
+		}
+		if err := c.connectToServer(accountId); err != nil {
+			return nil, err
+		}
+	}
 	if err != nil {
 		Logger.Printf("Directories list download (%v) failed: %v\n", accountId, err)
 		return nil, fmt.Errorf("dirs %v: %v", accountId, err)
@@ -79,7 +88,15 @@ func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
 	}
 
 	// Cache miss, go and ask server.
-	_, count, err = c.imapConns[accountId].DirStatus(c.rawDirName(dirName))
+	for i := 0; i < 5; i++ {
+		_, count, err = c.imapConns[accountId].DirStatus(c.rawDirName(dirName))
+		if err == nil || !connectionError(err) {
+			break
+		}
+		if err := c.connectToServer(accountId); err != nil {
+			return 0, err
+		}
+	}
 	if err != nil {
 		Logger.Printf("Directories status download (%v, %v) failed: %v\n", accountId, dirName, err)
 		return 0, fmt.Errorf("unreadcount %v, %v: %v", accountId, dirName, err)
@@ -114,7 +131,17 @@ func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]i
 
 	Logger.Printf("Downloading message list for %v, %v...\n", accountId, dirName)
 	// Cache miss, go and ask server.
-	list, err := c.imapConns[accountId].FetchMaillist(c.rawDirName(dirName))
+	var list []imap.MessageInfo
+	var err error
+	for i := 0; i < 5; i++ {
+		list, err = c.imapConns[accountId].FetchMaillist(c.rawDirName(dirName))
+		if err == nil || !connectionError(err) {
+			break
+		}
+		if err := c.connectToServer(accountId); err != nil {
+			return nil, err
+		}
+	}
 	if err != nil {
 		Logger.Printf("Message list download (%v, %v) failed: %v\n", accountId, dirName, err)
 		return nil, fmt.Errorf("msgslist %v, %v: %v", accountId, dirName, err)
@@ -134,11 +161,11 @@ func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]i
 // call it repeatly. Function arguments are NOT checked for validity, invalid
 // account ID or directory name will lead to undefined behavior (usually
 // panic).
-func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated bool) (*common.Msg, error) {
+func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated bool) (*imap.MessageInfo, error) {
 	if allowOutdated {
 		msg, err := c.caches[accountId].Dir(dirName).GetMsg(uid)
 		if err == nil && len(msg.Msg.Parts) != 0 {
-			return &msg.Msg, nil
+			return msg, nil
 		}
 		if err != nil && err != storage.ErrNullValue {
 			return nil, err
@@ -146,19 +173,29 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated
 	}
 
 	Logger.Printf("Downloading message text for (%v, %v, %v)...\n", accountId, dirName, uid)
-	msg, err := c.imapConns[accountId].FetchPartialMail(dirName, uid, imap.TextOnly)
+	var msg *imap.MessageInfo
+	var err error
+	for i := 0; i < 5; i++ {
+		msg, err = c.imapConns[accountId].FetchPartialMail(dirName, uid, imap.TextOnly)
+		if err == nil || !connectionError(err) {
+			break
+		}
+		if err := c.connectToServer(accountId); err != nil {
+			return nil, err
+		}
+	}
 	if err != nil {
 		Logger.Printf("Message text download (%v, %v, %v) failed: %v\n", accountId, dirName, uid, err)
 		return nil, fmt.Errorf("msgtext %v, %v, %v: %v", accountId, dirName, uid, err)
 	}
 
 	// Update information in cache.
-	// TODO: Update other information.
+	// XXX: THIS BREAKS SEQUENCE NUMBER ORDERING BY MOVING MESSAGES TO END OF THE LIST. FIX IT NOW.
 	if err := c.caches[accountId].Dir(dirName).AddMsg(msg); err != nil {
 		Logger.Println("Cache AddMsg:", err)
 	}
 
-	return &msg.Msg, nil
+	return msg, nil
 }
 
 // GetMsgPart downloads message part specified by part index (literally index
@@ -169,11 +206,33 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated
 // invalid account ID or directory name will lead to undefined behavior
 // (usually anic).
 func (c *Client) GetMsgPart(accountId, dirName string, uid uint32, partIndex int) (*common.Part, error) {
-	return c.imapConns[accountId].DownloadPart(dirName, uid, partIndex)
+	var prt *common.Part
+	var err error
+	for i := 0; i < 5; i++ {
+		prt, err = c.imapConns[accountId].DownloadPart(dirName, uid, partIndex)
+		if err == nil || !connectionError(err) {
+			break
+		}
+		if err := c.connectToServer(accountId); err != nil {
+			return nil, err
+		}
+	}
+	return prt, err
 }
 
 func (c *Client) ResolveUid(accountId, dir string, seqnum uint32) (uint32, error) {
-	return c.imapConns[accountId].ResolveUid(dir, seqnum)
+	var uid uint32
+	var err error
+	for i := 0; i < 5; i++ {
+		uid, err = c.imapConns[accountId].ResolveUid(dir, seqnum)
+		if err == nil || !connectionError(err) {
+			break
+		}
+		if err := c.connectToServer(accountId); err != nil {
+			return 0, err
+		}
+	}
+	return uid, err
 }
 
 func (c *Client) DownloadOfflineDirs(accountId string) {
