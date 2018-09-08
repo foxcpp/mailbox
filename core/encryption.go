@@ -54,15 +54,13 @@ func (c *Client) SetMasterPass(pass string) error {
 	c.GlobalCfg.Encryption.MasterKeySalt = hex.EncodeToString(salt)
 
 	// Re-encrypt all things.
-	for acc, _ := range c.caches {
-		c.caches[acc].dirty = true
-		c.saveFullCache(acc)
-	}
+	//for acc, _ := range c.caches {
+	//	//TODO: c.caches[acc].ChangeKey()
+	//}
 	for acc, conf := range c.serverCfgs {
 		cfg := c.Accounts[acc]
 		cfg.Credentials.Pass = hex.EncodeToString(c.EncryptUsingMaster([]byte(conf.imap.Pass)))
 		c.Accounts[acc] = cfg
-
 	}
 
 	return c.prepareMasterKey(pass)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/foxcpp/mailbox/proto/common"
 	"github.com/foxcpp/mailbox/proto/imap"
+	"github.com/foxcpp/mailbox/storage"
 )
 
 // GetDirs returns list of *all* directories for specified account.
@@ -22,12 +23,17 @@ import (
 // Function arguments are NOT checked for validity, invalid account ID will
 // lead to undefined behavior (usually panic).
 func (c *Client) GetDirs(accountId string) (StrSet, error) {
-	c.caches[accountId].lock.Lock()
-	defer c.caches[accountId].lock.Unlock()
-
-	set := c.caches[accountId].dirs
-	if set != nil {
+	list, err := c.caches[accountId].DirList()
+	if err != nil {
+		return nil, err
+	}
+	// List should contain at least INBOX.
+	if len(list) != 0 {
 		// Cache hit!
+		set := make(StrSet)
+		for _, name := range list {
+			set.Add(name)
+		}
 		return set, nil
 	}
 
@@ -42,11 +48,10 @@ func (c *Client) GetDirs(accountId string) (StrSet, error) {
 	c.imapDirSep = separator
 	resSet := make(StrSet)
 	for _, name := range list {
+		c.caches[accountId].AddDir(c.normalizeDirName(name))
 		resSet.Add(c.normalizeDirName(name))
 	}
 
-	c.caches[accountId].dirs = resSet
-	c.caches[accountId].dirty = true
 	return resSet, nil
 }
 
@@ -67,23 +72,20 @@ func (c *Client) rawDirName(normalized string) string {
 // Function arguments are NOT checked for validity, invalid account ID or
 // directory name will lead to undefined behavior (usually panic).
 func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
-	c.caches[accountId].lock.Lock()
-	defer c.caches[accountId].lock.Unlock()
-
-	count, prs := c.caches[accountId].unreadCounts[dirName]
-	if prs {
+	count, err := c.caches[accountId].Dir(dirName).UnreadCount()
+	if err != nil {
 		// Cache hit!
 		return count, nil
 	}
 
 	// Cache miss, go and ask server.
-	_, count, err := c.imapConns[accountId].DirStatus(c.rawDirName(dirName))
+	_, count, err = c.imapConns[accountId].DirStatus(c.rawDirName(dirName))
 	if err != nil {
 		Logger.Printf("Directories status download (%v, %v) failed: %v\n", accountId, dirName, err)
 		return 0, fmt.Errorf("unreadcount %v, %v: %v", accountId, dirName, err)
 	}
 
-	c.caches[accountId].unreadCounts[dirName] = count
+	c.caches[accountId].Dir(dirName).SetUnreadCount(count)
 
 	return count, nil
 }
@@ -92,21 +94,22 @@ func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
 // Each entry includes base headers (From, To, Cc, Bcc, Date, Subject), IMAP flags and
 // message UID.
 //
-// Returned value is cached, it's fine to call it repeatly.
+// Returned value is cached, it's fine to call this function repeatly.
 // Function arguments are NOT checked for validity, invalid account ID or
-// directory name will lead to undefined behavior (usually panic).
+// directory name will lead to undefined behavior (probably panic).
 func (c *Client) GetMsgsList(accountId, dirName string) ([]imap.MessageInfo, error) {
 	return c.getMsgsList(accountId, dirName, false)
 }
 
 func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]imap.MessageInfo, error) {
-	c.caches[accountId].lock.Lock()
-	defer c.caches[accountId].lock.Unlock()
-
-	list, prs := c.caches[accountId].messagesByDir[dirName]
-	if prs && !forceDownload {
-		// Cache hit!
-		return list, nil
+	if !forceDownload {
+		list, err := c.caches[accountId].Dir(dirName).ListMsgs()
+		if err == nil {
+			return list, nil
+		}
+		if err != storage.ErrNullValue {
+			return nil, err
+		}
 	}
 
 	Logger.Printf("Downloading message list for %v, %v...\n", accountId, dirName)
@@ -117,17 +120,8 @@ func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]i
 		return nil, fmt.Errorf("msgslist %v, %v: %v", accountId, dirName, err)
 	}
 
-	oldMsgsByUid := c.caches[accountId].messagesByUid[dirName]
-
-	c.caches[accountId].messagesByDir[dirName] = list
-	c.caches[accountId].messagesByUid[dirName] = make(map[uint32]*imap.MessageInfo)
-	for i, msg := range list {
-		c.caches[accountId].messagesByUid[dirName][msg.UID] = &list[i]
-		if oldMsg, prs := oldMsgsByUid[msg.UID]; prs {
-			c.caches[accountId].messagesByUid[dirName][msg.UID].Msg.Parts = oldMsg.Msg.Parts
-		}
-	}
-	c.caches[accountId].dirty = true
+	c.caches[accountId].Dir(dirName).UpdateMsglist(list)
+	c.caches[accountId].Dir(dirName).MarkAsValid()
 
 	return list, nil
 }
@@ -141,12 +135,13 @@ func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]i
 // account ID or directory name will lead to undefined behavior (usually
 // panic).
 func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated bool) (*common.Msg, error) {
-	c.caches[accountId].lock.Lock()
-	defer c.caches[accountId].lock.Unlock()
-
 	if allowOutdated {
-		if msg, prs := c.caches[accountId].messagesByUid[dirName][uid]; prs && len(msg.Msg.Parts) != 0 {
+		msg, err := c.caches[accountId].Dir(dirName).GetMsg(uid)
+		if err == nil && len(msg.Msg.Parts) != 0 {
 			return &msg.Msg, nil
+		}
+		if err != nil && err != storage.ErrNullValue {
+			return nil, err
 		}
 	}
 
@@ -159,10 +154,11 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated
 
 	// Update information in cache.
 	// TODO: Update other information.
-	c.caches[accountId].messagesByUid[dirName][uid].Msg.Parts = msg.Msg.Parts
-	c.caches[accountId].dirty = true
+	if err := c.caches[accountId].Dir(dirName).AddMsg(msg); err != nil {
+		Logger.Println("Cache AddMsg:", err)
+	}
 
-	return &c.caches[accountId].messagesByUid[dirName][uid].Msg, nil
+	return &msg.Msg, nil
 }
 
 // GetMsgPart downloads message part specified by part index (literally index
@@ -177,7 +173,6 @@ func (c *Client) GetMsgPart(accountId, dirName string, uid uint32, partIndex int
 }
 
 func (c *Client) ResolveUid(accountId, dir string, seqnum uint32) (uint32, error) {
-	//return c.caches[accountId].messagesByDir[dir][seqnum].UID, nil
 	return c.imapConns[accountId].ResolveUid(dir, seqnum)
 }
 

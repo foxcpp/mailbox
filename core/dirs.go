@@ -15,10 +15,7 @@ func (c *Client) CreateDir(accountId, parentDir, newDir string) error {
 	if err != nil {
 		Logger.Printf("CreateSubdir failed (%v, %v, %v): %v\n", accountId, parentDir, newDir, err)
 	} else {
-		c.caches[accountId].lock.Lock()
-		c.caches[accountId].dirs.Add(c.joinWithParentDir(parentDir, newDir))
-		c.caches[accountId].dirty = true
-		c.caches[accountId].lock.Unlock()
+		c.caches[accountId].AddDir(c.joinWithParentDir(parentDir, newDir))
 	}
 	return err
 }
@@ -30,10 +27,7 @@ func (c *Client) RemoveDir(accountId, parentDir, dir string) error {
 	if err != nil {
 		Logger.Printf("CreateSubdir failed (%v, %v, %v): %v\n", accountId, parentDir, dir, err)
 	} else {
-		c.caches[accountId].lock.Lock()
-		c.caches[accountId].dirs.Remove(dirName)
-		c.caches[accountId].dirty = true
-		c.caches[accountId].lock.Unlock()
+		c.caches[accountId].RemoveDir(dirName)
 	}
 	return err
 }
@@ -48,11 +42,7 @@ func (c *Client) MoveDir(accountId, oldParentDir, newParentDir, dir string) erro
 	if err != nil {
 		Logger.Printf("MoveDir failed (%v, %v from %v to %v): %v\n", accountId, dir, oldParentDir, newParentDir, err)
 	} else {
-		c.caches[accountId].lock.Lock()
-		c.caches[accountId].dirs.Remove(fromNorm)
-		c.caches[accountId].dirs.Add(c.joinWithParentDir(newParentDir, dir))
-		c.caches[accountId].dirty = true
-		c.caches[accountId].lock.Unlock()
+		c.caches[accountId].RenameDir(fromNorm, c.joinWithParentDir(newParentDir, dir))
 	}
 	return err
 }
@@ -64,11 +54,7 @@ func (c *Client) RenameDir(accountId, oldName, newName string) error {
 	if err != nil {
 		Logger.Printf("RenameDir failed (%v, from %v to %v): %v\n", accountId, oldName, newName, err)
 	} else {
-		c.caches[accountId].lock.Lock()
-		c.caches[accountId].dirs.Remove(oldName)
-		c.caches[accountId].dirs.Add(newName)
-		c.caches[accountId].dirty = true
-		c.caches[accountId].lock.Unlock()
+		c.caches[accountId].RenameDir(oldName, newName)
 	}
 	return err
 }

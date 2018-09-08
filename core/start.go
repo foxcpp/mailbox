@@ -6,32 +6,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sync"
 
 	eimap "github.com/emersion/go-imap"
 	"github.com/foxcpp/mailbox/proto/common"
 	"github.com/foxcpp/mailbox/proto/imap"
 	"github.com/foxcpp/mailbox/storage"
 )
-
-func remove(s []imap.MessageInfo, i int) []imap.MessageInfo {
-	return append(s[:i], s[i+1:]...)
-}
-
-type accountData struct {
-	dirs          StrSet
-	unreadCounts  map[string]uint
-	messagesByUid map[string]map[uint32]*imap.MessageInfo
-	// TODO: Slice should be replaced with linked list because we need to remove items from middle
-	// and do it pretty often.
-	messagesByDir map[string][]imap.MessageInfo
-
-	uidValidity map[string]uint32
-
-	dirty               bool
-	cacheFlusherStopSig chan bool
-	lock                sync.Mutex
-}
 
 // FrontendHooks provides a way for core to call into GUI for various needs
 // such as fatal error reporting or password requests.
@@ -64,7 +44,7 @@ type Client struct {
 	Accounts  map[string]storage.AccountCfg
 	GlobalCfg storage.GlobalCfg
 
-	caches map[string]*accountData
+	caches map[string]*storage.CacheDB
 
 	serverCfgs map[string]struct {
 		imap, smtp common.ServConfig
@@ -117,7 +97,7 @@ func Launch(hooks FrontendHooks) (*Client, error) {
 	})
 
 	res.Accounts = make(map[string]storage.AccountCfg)
-	res.caches = make(map[string]*accountData)
+	res.caches = make(map[string]*storage.CacheDB)
 	res.imapConns = make(map[string]*imap.Client)
 
 	for name, info := range accounts {
@@ -189,18 +169,6 @@ func (c *Client) prepareServerConfig(accountId string) {
 	}
 }
 
-func (c *Client) initCaches(accountId string) {
-	c.caches[accountId] = &accountData{
-		dirs:                nil,
-		unreadCounts:        make(map[string]uint),
-		messagesByUid:       make(map[string]map[uint32]*imap.MessageInfo),
-		messagesByDir:       make(map[string][]imap.MessageInfo),
-		uidValidity:         make(map[string]uint32),
-		dirty:               false,
-		cacheFlusherStopSig: make(chan bool),
-	}
-}
-
 func (c *Client) connectToServer(accountId string) *AccountError {
 	var err error
 
@@ -230,23 +198,19 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 		NewMessage: func(dir string, seqnum uint32) {
 			Logger.Printf("New message for account %v in dir %v, sequence number: %v.\n", accountId, dir, seqnum)
 
-			c.caches[accountId].lock.Lock()
-
 			// TODO: Measure performance impact of this extract resolve request
 			// and consider exposing seqnum-based operations in imap.Client.
 			uid, err := c.ResolveUid(accountId, dir, seqnum)
 			if err != nil {
 				Logger.Println("Alert: Reloading message list: failed to download message:", err)
-				c.caches[accountId].lock.Unlock()
 				c.reloadMaillist(accountId, dir)
 				return
 			}
 
-			msgsByDir := c.caches[accountId].messagesByDir[dir]
+			count := c.caches[accountId].Dir(dir).MsgsCount()
 
-			if seqnum != uint32(len(msgsByDir)+1) {
+			if seqnum != uint32(count+1) {
 				Logger.Println("Alert: Reloading message list: sequence numbers de-synced.")
-				c.caches[accountId].lock.Unlock()
 				c.reloadMaillist(accountId, dir)
 				return
 			}
@@ -255,15 +219,13 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			msg, err := c.imapConns[accountId].FetchPartialMail(dir, uid, imap.TextOnly)
 			if err != nil {
 				Logger.Println("Alert: Reloading message list: failed to download message:", err)
-				c.caches[accountId].lock.Unlock()
 				c.reloadMaillist(accountId, dir)
 				return
 			}
-			msgsByDir = append(msgsByDir, *msg)
-			c.caches[accountId].messagesByUid[dir][msg.UID] = &msgsByDir[len(msgsByDir)-1]
 
-			c.caches[accountId].dirty = true
-			c.caches[accountId].lock.Unlock()
+			if err := c.caches[accountId].Dir(dir).AddMsg(msg); err != nil {
+				Logger.Println("Cache AddMsg:", err)
+			}
 
 			if c.Hooks.ResetDir != nil {
 				c.Hooks.ResetDir(accountId, dir)
@@ -272,22 +234,22 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 		MessageRemoved: func(dir string, seqnum uint32) {
 			Logger.Printf("Message removed from dir %v on account %v, sequence number: %v.\n", dir, accountId, seqnum)
 
-			c.caches[accountId].lock.Lock()
+			count := c.caches[accountId].Dir(dir).MsgsCount()
 
-			// Look-up UID to remove in cache.
-			if uint32(len(c.caches[accountId].messagesByDir[dir])) < seqnum {
+			if uint32(count) < seqnum {
 				Logger.Println("Alert: Reloading message list: sequence number is out of range.")
-				c.caches[accountId].lock.Unlock()
 				c.reloadMaillist(accountId, dir)
 				return
 			}
-			uid := c.caches[accountId].messagesByDir[dir][seqnum-1].UID
-
-			c.caches[accountId].messagesByDir[dir] = remove(c.caches[accountId].messagesByDir[dir], int(seqnum-1))
-			delete(c.caches[accountId].messagesByUid[dir], uid)
-
-			c.caches[accountId].dirty = true
-			c.caches[accountId].lock.Unlock()
+			// Look-up UID to remove in cache.
+			uid, err := c.caches[accountId].Dir(dir).ResolveUid(seqnum)
+			if err != nil {
+				Logger.Println("Alert: Reloading message list: failed to resolve UID for removed message.")
+				c.reloadMaillist(accountId, dir)
+			}
+			if err := c.caches[accountId].Dir(dir).DelMsg(uid); err != nil {
+				Logger.Println("Cache DelMsg:", err)
+			}
 
 			if c.Hooks.ResetDir != nil {
 				c.Hooks.ResetDir(accountId, dir)
@@ -306,15 +268,15 @@ func (c *Client) prefetchData(accountId string) error {
 	}
 	Logger.Println("Directories:", dirs.List())
 
-	for _, dir := range c.caches[accountId].dirs.List() {
+	for _, dir := range dirs.List() {
 		value, err := c.imapConns[accountId].UidValidity(dir)
 		if err != nil {
 			return err
 		}
-		c.caches[accountId].uidValidity[dir] = value
+		c.caches[accountId].Dir(dir).SetUidValidity(value)
 	}
 
-	for _, dir := range c.caches[accountId].dirs.List() {
+	for _, dir := range dirs.List() {
 		err = c.prefetchDirData(accountId, dir)
 	}
 
@@ -331,11 +293,7 @@ func (c *Client) prefetchDirData(accountId, dir string) error {
 }
 
 func (c *Client) reloadMaillist(accountId string, dir string) {
-	c.caches[accountId].lock.Lock()
-	c.caches[accountId].messagesByUid[dir] = make(map[uint32]*imap.MessageInfo)
-	c.caches[accountId].messagesByDir = make(map[string][]imap.MessageInfo)
-	c.caches[accountId].lock.Unlock()
-	c.GetMsgsList(accountId, dir)
+	c.getMsgsList(accountId, dir, true)
 
 	if c.Hooks.ResetDir != nil {
 		c.Hooks.ResetDir(accountId, dir)

@@ -8,9 +8,6 @@ import (
 )
 
 func (c *Client) SaveDraft(accountId string, draft *common.Msg) (uint32, error) {
-	c.caches[accountId].lock.Lock()
-	defer c.caches[accountId].lock.Unlock()
-
 	draftDir := c.Accounts[accountId].Dirs.Drafts
 
 	uid, err := c.imapConns[accountId].Create(draftDir, []string{`\Draft`}, time.Now(), draft)
@@ -18,16 +15,12 @@ func (c *Client) SaveDraft(accountId string, draft *common.Msg) (uint32, error) 
 		return 0, err
 	}
 
-	delete(c.caches[accountId].unreadCounts, draftDir)
-	delete(c.caches[accountId].messagesByDir, draftDir)
+	c.reloadMaillist(accountId, draftDir)
 
 	return uid, nil
 }
 
 func (c *Client) UpdateDraft(accountId string, oldUid uint32, new *common.Msg) (uint32, error) {
-	c.caches[accountId].lock.Lock()
-	defer c.caches[accountId].lock.Unlock()
-
 	draftDir := c.Accounts[accountId].Dirs.Drafts
 
 	uid, err := c.imapConns[accountId].Replace(draftDir, oldUid, []string{`\Draft`}, time.Now(), new)
@@ -35,9 +28,7 @@ func (c *Client) UpdateDraft(accountId string, oldUid uint32, new *common.Msg) (
 		return 0, err
 	}
 
-	delete(c.caches[accountId].messagesByUid[draftDir], oldUid)
-	delete(c.caches[accountId].unreadCounts, draftDir)
-	delete(c.caches[accountId].messagesByDir, draftDir)
+	c.reloadMaillist(accountId, draftDir)
 
 	return uid, nil
 }

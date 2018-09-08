@@ -6,7 +6,7 @@ import (
 	"runtime"
 )
 
-// GetDirectory tries picks first path from following list if all envvars are present:
+// GetDirectory picks first path from following list if all envvars are present:
 // - $MAILBOX_HOME
 // - $USERPROFILE\AppData\Roaming\mailbox (Windows-only)
 // - $XDG_CONFIG_HOME/mailbox

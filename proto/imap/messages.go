@@ -116,7 +116,7 @@ func (c *Client) UnTag(dir string, tag string, uids ...uint32) error {
 	return c.cl.UidStore(&seqset, eimap.FormatFlagsOp(eimap.RemoveFlags, true), []interface{}{tag}, nil)
 }
 
-// Create creates new message in specified directory, flags and date are option
+// Create creates new message in specified directory, flags and date are optional
 // and can be null.
 func (c *Client) Create(dir string, flags []string, date time.Time, msg *common.Msg) (uint32, error) {
 	c.IOLock.Lock()
@@ -132,6 +132,8 @@ func (c *Client) Create(dir string, flags []string, date time.Time, msg *common.
 
 	buf := bytes.Buffer{}
 	msg.Write(&buf)
+	// XXX: THIS MAY NOT WORK CORRECTLY.
+	// See https://tools.ietf.org/html/rfc3501#section-2.3.1.1
 	return status.UidNext, c.cl.Append(dir, flags, date, &buf)
 }
 

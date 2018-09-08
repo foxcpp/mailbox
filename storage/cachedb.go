@@ -2,7 +2,9 @@ package storage
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"io"
 	"net/mail"
 	"strings"
 	"time"
@@ -12,6 +14,9 @@ import (
 	"github.com/foxcpp/mailbox/proto/imap"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// Returned if requested information is not cached in DB.
+var ErrNullValue = errors.New("cachedb: null value encountered")
 
 // TODO: Consider using ATTACH DATABASE to have one connection for multiple accounts.
 
@@ -27,7 +32,8 @@ Various information about directories. Currently only UIDVALIDITY value.
 
 Columns:
 - dir (string) [index]
-- uidvalidity (int)
+- uidvalidity (int, nullable)
+- unreadcount (int, nullable)
 
 meta:
 Various meta-information extracted from headers.
@@ -102,10 +108,19 @@ type CacheDB struct {
 	// List directories.
 	dirList *sql.Stmt
 
-	// Get UIDVALIDITY value for dir.
-	uidValidity *sql.Stmt
+	// Set/Get UIDVALIDITY value for dir.
+	uidValidity    *sql.Stmt
+	setUidValidity *sql.Stmt
 
-	// Add new directory to list, requires UIDVALIDITY value.
+	// Set/Get unread count value for dir.
+	unreadCount    *sql.Stmt
+	setUnreadCount *sql.Stmt
+
+	isMsglistValid    *sql.Stmt
+	invalidateDirinfo *sql.Stmt
+	invalidateMsglist *sql.Stmt
+
+	// Add new directory to list.
 	addDir *sql.Stmt
 
 	// Remove directory from list.
@@ -121,6 +136,8 @@ type CacheDB struct {
 
 	// Get message headers blob using dir + UID.
 	getMsgHdrs *sql.Stmt
+
+	resolveUid *sql.Stmt
 
 	// Get message meta-data + all headers using sequence number + dir.
 	getMsgBySeq *sql.Stmt
@@ -167,6 +184,7 @@ func OpenCacheDB(path string) (*CacheDB, error) {
 	db := new(CacheDB)
 	var err error
 	db.d, err = sql.Open("sqlite3", path+"?cache=shared")
+	//db.d.SetMaxOpenConns(1)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +195,10 @@ func OpenCacheDB(path string) (*CacheDB, error) {
 	return db, db.initStmts()
 }
 
+func (db *CacheDB) SQL() *sql.DB {
+	return db.d
+}
+
 func (db *CacheDB) Close() error {
 	return db.d.Close()
 }
@@ -185,7 +207,9 @@ func (db *CacheDB) initSchema() error {
 	db.d.Exec(`PRAGMA foreign_keys = ON`)
 	db.d.Exec(`PRAGMA auto_vacuum = INCREMENTAL`)
 	db.d.Exec(`PRAGMA journal_mode = WAL`)
-	db.d.Exec(`PRAGMA locking_mode = EXCLUSIVE`)
+	// EXCLUSIVE locking_mode causes strange delays and "database is locked" errors in random placed.
+	// Probably due to database/sql's connection pooling.
+	db.d.Exec(`PRAGMA locking_mode = NORMAL`)
 	db.d.Exec(`PRAGMA defer_foreign_keys = ON`)
 	db.d.Exec(`PRAGMA synchronous = NORMAL`)
 	db.d.Exec(`PRAGMA temp_store = MEMORY`)
@@ -195,7 +219,9 @@ func (db *CacheDB) initSchema() error {
 	_, err := db.d.Exec(`
 		CREATE TABLE IF NOT EXISTS dirinfo (
 			dir TEXT PRIMARY KEY NOT NULL,
-			uidvalidity INT NOT NULL
+			uidvalidity INT DEFAULT NULL,
+			unreadcount INT DEFAULT NULL,
+			msglistvalid INT DEFAULT 0
 		)`)
 	if err != nil {
 		return err
@@ -260,7 +286,37 @@ func (db *CacheDB) initStmts() error {
 		return err
 	}
 
-	db.addDir, err = db.d.Prepare(`INSERT OR REPLACE INTO dirinfo VALUES (?, ?)`)
+	db.setUidValidity, err = db.d.Prepare(`UPDATE dirinfo SET uidvalidity = ? WHERE dir = ?`)
+	if err != nil {
+		return err
+	}
+
+	db.unreadCount, err = db.d.Prepare(`SELECT unreadcount FROM dirinfo WHERE dir = ?`)
+	if err != nil {
+		return err
+	}
+
+	db.setUnreadCount, err = db.d.Prepare(`UPDATE dirinfo SET unreadcount = ? WHERE dir = ?`)
+	if err != nil {
+		return err
+	}
+
+	db.isMsglistValid, err = db.d.Prepare(`SELECT msglistvalid FROM dirinfo WHERE dir = ?`)
+	if err != nil {
+		return err
+	}
+
+	db.invalidateDirinfo, err = db.d.Prepare(`UPDATE dirinfo SET unreadcount = NULL, uidvalidity = NULL, msglistvalid = 0 WHERE dir = ?`)
+	if err != nil {
+		return err
+	}
+
+	db.invalidateMsglist, err = db.d.Prepare(`UPDATE dirinfo SET msglistvalid = 0 WHERE dir = ?`)
+	if err != nil {
+		return err
+	}
+
+	db.addDir, err = db.d.Prepare(`INSERT OR REPLACE INTO dirinfo(dir) VALUES (?)`)
 	if err != nil {
 		return err
 	}
@@ -286,19 +342,24 @@ func (db *CacheDB) initStmts() error {
 	}
 
 	db.getAllMsgs, err = db.d.Prepare(`
-		SELECT dir,uid,timestamp,sender,recipients,cc,bcc,messageid,replyto,subject
+		SELECT uid,timestamp,sender,recipients,cc,bcc,messageid,replyto,subject,hdrs
 		FROM meta WHERE dir = ?`)
 	if err != nil {
 		return err
 	}
-	db.getMsgHdrs, err = db.d.Prepare(`SELECT hdrs FROM meta WHERE dir =? AND uid = ?`)
+	db.getMsgHdrs, err = db.d.Prepare(`SELECT hdrs FROM meta WHERE dir = ? AND uid = ?`)
+	if err != nil {
+		return err
+	}
+
+	db.resolveUid, err = db.d.Prepare(`SELECT uid FROM meta WHERE dir = ? LIMIT 1 OFFSET ?-1`)
 	if err != nil {
 		return err
 	}
 
 	db.getMsgBySeq, err = db.d.Prepare(`
 		SELECT uid,timestamp,sender,recipients,cc,bcc,messageid,replyto,subject,hdrs
-		FROM meta WHERE dir = ? LIMIT 1 OFFSET ?+1`)
+		FROM meta WHERE dir = ? LIMIT 1 OFFSET ?-1`)
 	if err != nil {
 		return err
 	}
@@ -355,7 +416,7 @@ func (db *CacheDB) initStmts() error {
 		return err
 	}
 
-	db.addPart, err = db.d.Prepare(`INSERT OR REPLACE INTO parts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	db.addPart, err = db.d.Prepare(`INSERT OR IGNORE INTO parts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -387,8 +448,8 @@ func (db *CacheDB) DirList() ([]string, error) {
 	return dirs, nil
 }
 
-func (db *CacheDB) AddDir(name string, uidvalidity uint64) error {
-	_, err := db.addDir.Exec(name, uidvalidity)
+func (db *CacheDB) AddDir(name string) error {
+	_, err := db.addDir.Exec(name)
 	return err
 }
 
@@ -420,12 +481,124 @@ func (db *CacheDB) RemoveDir(name string) error {
 	return tx.Commit()
 }
 
+func (db *CacheDB) RenameDir(old string, new string) error {
+	tx, err := db.d.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`UPDATE dirinfo SET dir = ? WHERE dir = ?`, old, new); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE meta SET dir = ? WHERE dir = ?`, old, new); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE tags SET dir = ? WHERE dir = ?`, old, new); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE parts SET dir = ? WHERE dir = ?`, old, new); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (db *CacheDB) Dir(name string) *Dirwrapper {
 	return &Dirwrapper{db, name}
 }
 
+func (d *Dirwrapper) UidValidity() (uint32, error) {
+	row := d.parent.uidValidity.QueryRow(d.dir)
+	value := sql.NullInt64{}
+	if err := row.Scan(&value); err != nil {
+		return 0, err
+	}
+	if !value.Valid {
+		return 0, ErrNullValue
+	}
+	return uint32(value.Int64), nil
+}
+
+// UpdateMsglist adds new messages from newList while preserving all extra information about old messages not present in newList (i.e. this is not just replace).
+// For example, cache may contain text body but newList entry does not. Text body will be preserved.
+// Note: This function assumes that UIDVALIDITY value is same for newList and old one in cache.
+// Note 2: Currently, all part information (including bodies) from newList is ignored if message is already present in cache.
+func (d *Dirwrapper) UpdateMsglist(newList []imap.MessageInfo) error {
+	tx, err := d.parent.d.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	oldUids := make(map[uint32]bool)
+	rows, err := d.parent.d.Query(`SELECT uid FROM meta WHERE dir = ?`, d.dir)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		uid := uint32(0)
+		if err := rows.Scan(&uid); err != nil {
+			return err
+		}
+		oldUids[uid] = true
+	}
+	for _, msg := range newList {
+		if !oldUids[msg.UID] {
+			if err := d.addMsg(tx, &msg); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (d *Dirwrapper) MarkAsValid() error {
+	_, err := d.parent.d.Exec(`UPDATE dirinfo SET msglistvalid = 1 WHERE dir = ?`, d.dir)
+	return err
+}
+
+func (d *Dirwrapper) SetUidValidity(newVal uint32) error {
+	_, err := d.parent.setUidValidity.Exec(newVal, d.dir)
+	return err
+}
+
+func (d *Dirwrapper) UnreadCount() (uint, error) {
+	row := d.parent.unreadCount.QueryRow(d.dir)
+	value := sql.NullInt64{}
+	if err := row.Scan(&value); err != nil {
+		return 0, err
+	}
+	if !value.Valid {
+		return 0, ErrNullValue
+	}
+	return uint(value.Int64), nil
+}
+
+func (d *Dirwrapper) SetUnreadCount(newVal uint) error {
+	_, err := d.parent.setUnreadCount.Exec(d.dir, newVal)
+	return err
+}
+
 func (d *Dirwrapper) ListMsgs() ([]imap.MessageInfo, error) {
-	rows, err := d.parent.getAllMsgs.Query(d.dir)
+	tx, err := d.parent.d.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	validity := uint(0)
+	row := tx.Stmt(d.parent.isMsglistValid).QueryRow(d.dir)
+	if err := row.Scan(&validity); err != nil {
+		return nil, err
+	}
+	if validity != 1 {
+		return nil, ErrNullValue
+	}
+
+	rows, err := tx.Stmt(d.parent.getAllMsgs).Query(d.dir)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +611,7 @@ func (d *Dirwrapper) ListMsgs() ([]imap.MessageInfo, error) {
 			return nil, err
 		}
 
-		rows, err := d.parent.getMsgTags.Query(d.dir, msg.UID)
+		rows, err := tx.Stmt(d.parent.getMsgTags).Query(d.dir, msg.UID)
 		if err != nil {
 			return nil, err
 		}
@@ -447,7 +620,7 @@ func (d *Dirwrapper) ListMsgs() ([]imap.MessageInfo, error) {
 			return nil, err
 		}
 		rows.Close()
-		rows, err = d.parent.getMsgPartInfo.Query(d.dir, msg.UID)
+		rows, err = tx.Stmt(d.parent.getMsgPartInfo).Query(d.dir, msg.UID)
 		if err != nil {
 			return nil, err
 		}
@@ -458,7 +631,7 @@ func (d *Dirwrapper) ListMsgs() ([]imap.MessageInfo, error) {
 
 		res = append(res, *msg)
 	}
-	return res, nil
+	return res, tx.Commit()
 }
 
 func (d *Dirwrapper) GetMsgHdrs(uid uint32) (common.Header, error) {
@@ -513,7 +686,7 @@ type Scannable interface {
 func readMessageInfo(r Scannable) (*imap.MessageInfo, error) {
 	uid, timestamp, sender, recipientsStr, ccStr := uint32(0), int64(0), "", "", ""
 	bccStr, messageId, replyTo, subject, hdrs := "", "", "", "", []byte{}
-	err := r.Scan(&uid, &timestamp, &sender, &recipientsStr, &ccStr, &bccStr, &messageId, &replyTo, &subject, hdrs)
+	err := r.Scan(&uid, &timestamp, &sender, &recipientsStr, &ccStr, &bccStr, &messageId, &replyTo, &subject, &hdrs)
 	if err != nil {
 		return nil, err
 	}
@@ -583,7 +756,11 @@ func readPartInfo(out *imap.MessageInfo, in *sql.Rows) error {
 
 		hdrsParsed, err := common.ReadHeader(hdrs)
 		if err != nil {
-			return err
+			if err == io.EOF {
+				hdrsParsed = make(common.Header)
+			} else {
+				return err
+			}
 		}
 		v, params, _ := hdrsParsed.ContentDisposition()
 		part.Disposition = common.ParametrizedHeader{v, params}
@@ -595,11 +772,37 @@ func readPartInfo(out *imap.MessageInfo, in *sql.Rows) error {
 	return nil
 }
 
+func (d *Dirwrapper) InvalidateMsglist() error {
+	tx, err := d.parent.d.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Stmt(d.parent.invalidateMsglist).Exec(d.dir); err != nil {
+		return err
+	}
+	if _, err := tx.Stmt(d.parent.remDirMsgs).Exec(d.dir, d.dir); err != nil {
+		return err
+	}
+	if _, err := tx.Stmt(d.parent.remDirMsgs2).Exec(d.dir); err != nil {
+		return err
+	}
+	if _, err := tx.Stmt(d.parent.remDirMsgs3).Exec(d.dir); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (d *Dirwrapper) GetMsg(uid uint32) (*imap.MessageInfo, error) {
 	row := d.parent.getMsgByUid.QueryRow(d.dir, uid)
 
 	msg, err := readMessageInfo(row)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNullValue
+		}
 		return nil, err
 	}
 
@@ -668,6 +871,14 @@ func (d *Dirwrapper) AddMsg(msg *imap.MessageInfo) error {
 	}
 	defer tx.Rollback()
 
+	if err := d.addMsg(tx, msg); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (d *Dirwrapper) addMsg(tx *sql.Tx, msg *imap.MessageInfo) error {
 	unixStamp := msg.Msg.Date.Unix()
 
 	hdrs, err := common.WriteHeader(msg.Msg.Misc)
@@ -710,7 +921,37 @@ func (d *Dirwrapper) AddMsg(msg *imap.MessageInfo) error {
 		}
 	}
 
+	return nil
+}
+
+func (d *Dirwrapper) ReplacePartList(msgUid uint32, newParts []common.Part) error {
+	tx, err := d.parent.d.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM parts WHERE dir = ?, uid = ?`, d.dir, msgUid); err != nil {
+		return err
+	}
+
+	for i, prt := range newParts {
+		if err := d.addPart(tx, msgUid, uint(i), &prt); err != nil {
+			return err
+		}
+	}
+
 	return tx.Commit()
+}
+
+func (d *Dirwrapper) MsgsCount() uint {
+	row := d.parent.d.QueryRow(`SELECT COUNT() FROM meta WHERE dir = ?`, d.dir)
+	count := uint(0)
+	if err := row.Scan(&count); err != nil {
+		// wtf
+		panic(err)
+	}
+	return count
 }
 
 func (d *Dirwrapper) addPart(tx *sql.Tx, msgUid uint32, indx uint, prt *common.Part) error {
@@ -750,4 +991,10 @@ func (d *Dirwrapper) addPart(tx *sql.Tx, msgUid uint32, indx uint, prt *common.P
 
 func (d *Dirwrapper) AddPart(msgUid uint32, indx uint, prt *common.Part) error {
 	return d.addPart(nil, msgUid, indx, prt)
+}
+
+func (d *Dirwrapper) ResolveUid(seq uint32) (uint32, error) {
+	row := d.parent.resolveUid.QueryRow(d.dir, seq)
+	uid := uint32(0)
+	return uid, row.Scan(&uid)
 }
