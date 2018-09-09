@@ -2,8 +2,6 @@ package imap
 
 import (
 	"time"
-
-	idle "github.com/emersion/go-imap-idle"
 )
 
 // This function is responsive for toggling of IDLE
@@ -35,9 +33,7 @@ func (c *Client) idleOnInbox() {
 
 	c.Logger.Println("Entering IDLE mode...")
 
-	idleClient := idle.NewClient(c.cl)
-
-	supported, err := idleClient.SupportIdle()
+	supported, err := c.idle.SupportIdle()
 	if err != nil {
 		c.Logger.Println("Capability query failed, not entering IDLE mode:", err)
 	}
@@ -51,7 +47,7 @@ func (c *Client) idleOnInbox() {
 	go func() {
 		// Setting very small "heartbeat" delay because some NATs and mail
 		// servers are really stupid to drop IDLE'ing connections.
-		idleChan <- idleClient.IdleWithFallback(idleStop, 90*time.Second)
+		idleChan <- c.idle.IdleWithFallback(idleStop, 90*time.Second)
 	}()
 
 	for {

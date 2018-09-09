@@ -3,6 +3,8 @@ module github.com/foxcpp/mailbox
 require (
 	github.com/emersion/go-imap v1.0.0-beta.1
 	github.com/emersion/go-imap-idle v0.0.0-20180114101550-2af93776db6b
+	github.com/emersion/go-imap-move v0.0.0-20180601155324-5eb20cb834bf
+	github.com/emersion/go-imap-uidplus v0.0.0-20171113212936-8c50fdd7d2c6
 	github.com/emersion/go-message v0.9.1
 	github.com/emersion/go-sasl v0.0.0-20161116183048-7e096a0a6197
 	github.com/emersion/go-smtp v0.0.0-20180712174835-db5eec195e67

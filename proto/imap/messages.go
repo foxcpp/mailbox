@@ -2,11 +2,20 @@ package imap
 
 import (
 	"bytes"
+	"fmt"
 	"time"
 
 	eimap "github.com/emersion/go-imap"
 	"github.com/foxcpp/mailbox/proto/common"
 )
+
+type TooBigError struct {
+	MaxSizeBytes uint
+}
+
+func (e TooBigError) Error() string {
+	return fmt.Sprintf("server doesn't accepts messages bigger than %v bytes", e.MaxSizeBytes)
+}
 
 // CopyTo copies all specified messages from one directory to another.
 // Invalid UIDs are ignored!
@@ -46,12 +55,7 @@ func (c *Client) MoveTo(fromDir string, targetDir string, uids ...uint32) error 
 	seqset := eimap.SeqSet{}
 	seqset.AddNum(uids...)
 
-	if err := c.cl.UidCopy(&seqset, targetDir); err != nil {
-		return err
-	}
-
-	// c.cl.Close will remove flagged messages.
-	return c.cl.UidStore(&seqset, eimap.FormatFlagsOp(eimap.AddFlags, true), []interface{}{eimap.DeletedFlag}, nil)
+	return c.move.UidMoveWithFallback(&seqset, targetDir)
 }
 
 // Delete deletes all specified messages.
@@ -132,9 +136,20 @@ func (c *Client) Create(dir string, flags []string, date time.Time, msg *common.
 
 	buf := bytes.Buffer{}
 	msg.Write(&buf)
-	// XXX: THIS MAY NOT WORK CORRECTLY.
-	// See https://tools.ietf.org/html/rfc3501#section-2.3.1.1
-	return status.UidNext, c.cl.Append(dir, flags, date, &buf)
+
+	uidplus, err := c.uidplus.SupportUidPlus()
+	if err != nil {
+		return 0, err
+	}
+	if uidplus {
+		_, uid, err := c.uidplus.Append(dir, flags, date, &buf)
+		return uid, err
+	} else {
+		// This may not work correctly and break a lot of things but we can't
+		// do anything better.
+		// See https://tools.ietf.org/html/rfc3501#section-2.3.1.1
+		return status.UidNext, c.cl.Append(dir, flags, date, &buf)
+	}
 }
 
 // Replace replaces existing message with different one *in one mailbox*
@@ -168,13 +183,26 @@ func (c *Client) Replace(dir string, uid uint32, flags []string, date time.Time,
 	// Create new message.
 	buf := bytes.Buffer{}
 	msg.Write(&buf)
-	if err := c.cl.Append(dir, flags, date, &buf); err != nil {
+
+	uidplus, err := c.uidplus.SupportUidPlus()
+	if err != nil {
+		return 0, err
+	}
+	var nuid uint32
+	if uidplus {
+		_, nuid, err = c.uidplus.Append(dir, flags, date, &buf)
+	} else {
+		err = c.cl.Append(dir, flags, date, &buf)
+		// This may not work correctly and break a lot of things but we can't
+		// do anything better.
+		// See https://tools.ietf.org/html/rfc3501#section-2.3.1.1
+		nuid = status.UidNext
+	}
+	if err != nil {
 		// Message creation failed. Abort old message deletion.
 		if err := c.cl.UidStore(&seqset, eimap.FormatFlagsOp(eimap.RemoveFlags, true), []interface{}{eimap.DeletedFlag}, nil); err != nil {
 			return 0, err
 		}
-		return 0, err
 	}
-
-	return status.UidNext, nil
+	return nuid, err
 }

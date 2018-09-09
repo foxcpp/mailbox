@@ -2,6 +2,10 @@ github.com/emersion/go-imap v1.0.0-beta.1 h1:bTCaVlUnb5mKoW9lEukusxguSYYZPer+q0g
 github.com/emersion/go-imap v1.0.0-beta.1/go.mod h1:oydmHwiyv92ZOiNfQY9BDax5heePWN8P2+W1B2T6qjc=
 github.com/emersion/go-imap-idle v0.0.0-20180114101550-2af93776db6b h1:q4qkNe/W10qFGD3RWd4meQTkD0+Zrz0L4ekMvlptg60=
 github.com/emersion/go-imap-idle v0.0.0-20180114101550-2af93776db6b/go.mod h1:o14zPKCmEH5WC1vU5SdPoZGgNvQx7zzKSnxPQlobo78=
+github.com/emersion/go-imap-move v0.0.0-20180601155324-5eb20cb834bf h1:TmRfuPmhrwAhWKu2XaBaY9N+anRRDBO+E8VRVO9g3fY=
+github.com/emersion/go-imap-move v0.0.0-20180601155324-5eb20cb834bf/go.mod h1:QuMaZcKFDVI0yCrnAbPLfbwllz1wtOrZH8/vZ5yzp4w=
+github.com/emersion/go-imap-uidplus v0.0.0-20171113212936-8c50fdd7d2c6 h1:srOqEtkP+bGwQTZ0qofk0KnTktogMzz1qbnjafQPWeg=
+github.com/emersion/go-imap-uidplus v0.0.0-20171113212936-8c50fdd7d2c6/go.mod h1:GfiSiw/du0221I3Cf4F0DqX3Bv5Xe580gIIATrQtnJg=
 github.com/emersion/go-message v0.9.1 h1:s6HoJ6t+1wHWEs0G/QVR1r5bb6nvx2/b6DuQfknit14=
 github.com/emersion/go-message v0.9.1/go.mod h1:m3cK90skCWxm5sIMs1sXxly4Tn9Plvcf6eayHZJ1NzM=
 github.com/emersion/go-sasl v0.0.0-20161116183048-7e096a0a6197 h1:rDJPbyliyym8ZL/Wt71kdolp6yaD4fLIQz638E6JEt0=

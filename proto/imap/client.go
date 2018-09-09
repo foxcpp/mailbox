@@ -10,8 +10,11 @@ import (
 	"time"
 
 	eimap "github.com/emersion/go-imap"
+	"github.com/emersion/go-imap-idle"
+	"github.com/emersion/go-imap-move"
+	"github.com/emersion/go-imap-uidplus"
 	"github.com/emersion/go-imap/client"
-	sasl "github.com/emersion/go-sasl"
+	"github.com/emersion/go-sasl"
 	"github.com/foxcpp/mailbox/proto/common"
 )
 
@@ -42,6 +45,8 @@ type Client struct {
 	KnownMailboxSizes map[string]uint32
 	Logger            log.Logger
 
+	maxUploadSize uint32
+
 	seenMailboxes map[string]eimap.MailboxInfo
 
 	updates               chan client.Update
@@ -51,6 +56,10 @@ type Client struct {
 
 	IOLock sync.Mutex
 	cl     *client.Client
+
+	uidplus *uidplus.Client
+	move    *move.Client
+	idle    *idle.IdleClient
 }
 
 func tlsHandshake(conn net.Conn, hostname string) (*client.Client, error) {
@@ -127,6 +136,10 @@ func Connect(target common.ServConfig) (*Client, error) {
 	res.KnownMailboxSizes = make(map[string]uint32)
 	res.cl.Updates = res.updates
 
+	res.idle = idle.NewClient(res.cl)
+	res.move = move.NewClient(res.cl)
+	res.uidplus = uidplus.NewClient(res.cl)
+
 	//res.cl.SetDebug(os.Stderr)
 
 	go res.updatesWatch()
@@ -164,6 +177,9 @@ func (c *Client) Reconnect(target common.ServConfig) error {
 	c.cl = nil
 	var err error
 	c.cl, err = connect(target)
+	c.idle = idle.NewClient(c.cl)
+	c.move = move.NewClient(c.cl)
+	c.uidplus = uidplus.NewClient(c.cl)
 	return err
 }
 
