@@ -24,17 +24,13 @@ func (c *Client) DirList() (delimiter string, list []string, err error) {
 	return delimiter, res, <-done
 }
 
-func (c *Client) DirStatus(dirName string) (total uint, unread uint, err error) {
-	c.stopIdle()
-	defer c.resumeIdle()
-	c.IOLock.Lock()
-	defer c.IOLock.Unlock()
+type DirStatus = imap.MailboxStatus
 
-	status, err := c.cl.Select(dirName, true)
+func (c *Client) Status(dir string) (*DirStatus, error) {
+	mbox, err := c.cl.Select(dir, true)
 	if err != nil {
-		return 0, 0, nil
+		return nil, err
 	}
 	defer c.cl.Close()
-
-	return uint(status.Messages), uint(status.Unseen), nil
+	return mbox, nil
 }

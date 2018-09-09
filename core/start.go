@@ -283,13 +283,12 @@ func (c *Client) prefetchData(accountId string) error {
 	if err != nil {
 		return err
 	}
-	Logger.Println("Directories:", dirs.List())
 
 	for _, dir := range dirs.List() {
-		var value uint32
+		var status *imap.DirStatus
 		var err error
 		for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-			value, err = c.imapConns[accountId].UidValidity(dir)
+			status, err = c.imapConns[accountId].Status(dir)
 			if err == nil || !connectionError(err) {
 				break
 			}
@@ -302,9 +301,9 @@ func (c *Client) prefetchData(accountId string) error {
 		}
 
 		cacheVal, err := c.caches[accountId].Dir(dir).UidValidity()
-		if cacheVal != value || err == storage.ErrNullValue {
+		if cacheVal != status.UidValidity || err == storage.ErrNullValue {
 			c.caches[accountId].Dir(dir).InvalidateMsglist()
-			c.caches[accountId].Dir(dir).SetUidValidity(value)
+			c.caches[accountId].Dir(dir).SetUidValidity(status.UidValidity)
 		}
 
 	}
@@ -317,11 +316,10 @@ func (c *Client) prefetchData(accountId string) error {
 }
 
 func (c *Client) prefetchDirData(accountId, dir string) error {
-	list, err := c.getMsgsList(accountId, dir, true)
+	_, err := c.getMsgsList(accountId, dir, true)
 	if err != nil {
 		return err
 	}
-	Logger.Println(len(list), "messages in", dir)
 	return nil
 }
 

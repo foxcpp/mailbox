@@ -77,12 +77,3 @@ func (c *Client) ResolveUid(dir string, seqnum uint32) (uint32, error) {
 	}
 	return (<-out).Uid, nil
 }
-
-func (c *Client) UidValidity(dir string) (uint32, error) {
-	mbox, err := c.cl.Select(dir, true)
-	if err != nil {
-		return 0, err
-	}
-	defer c.cl.Close()
-	return mbox.UidValidity, nil
-}

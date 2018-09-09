@@ -87,9 +87,10 @@ func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
 		return count, nil
 	}
 
+	var status *imap.DirStatus
 	// Cache miss, go and ask server.
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		_, count, err = c.imapConns[accountId].DirStatus(c.rawDirName(dirName))
+		status, err = c.imapConns[accountId].Status(c.rawDirName(dirName))
 		if err == nil || !connectionError(err) {
 			break
 		}
@@ -102,6 +103,7 @@ func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
 		return 0, fmt.Errorf("unreadcount %v, %v: %v", accountId, dirName, err)
 	}
 
+	count = uint(status.Unseen)
 	c.caches[accountId].Dir(dirName).SetUnreadCount(count)
 
 	return count, nil
