@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	eimap "github.com/emersion/go-imap"
 	"github.com/foxcpp/mailbox/proto/common"
@@ -52,7 +53,11 @@ type Client struct {
 
 	imapConns map[string]*imap.Client
 
-	imapDirSep string
+	// Per-account list of directories message list for which is downloaded early (during Launch).
+	// Currently this is only INBOX.
+	prefetchDirs map[string][]string
+
+	imapDirSep sync.Map
 }
 
 type AccountError struct {
@@ -99,6 +104,7 @@ func Launch(hooks FrontendHooks) (*Client, error) {
 	res.Accounts = make(map[string]storage.AccountCfg)
 	res.caches = make(map[string]*storage.CacheDB)
 	res.imapConns = make(map[string]*imap.Client)
+	res.prefetchDirs = make(map[string][]string)
 
 	for name, info := range accounts {
 		Logger.Println("Setting up account", name+"...")
@@ -167,6 +173,8 @@ func (c *Client) prepareServerConfig(accountId string) {
 			Pass:     pass,
 		},
 	}
+
+	c.prefetchDirs[accountId] = []string{"INBOX"}
 }
 
 func (c *Client) connectToServer(accountId string) *AccountError {
@@ -201,6 +209,14 @@ func (c *Client) connectToServer(accountId string) *AccountError {
 	c.imapConns[accountId].Logger = *log.New(os.Stderr, "[mailbox/proto/imap:"+accountId+"] ", log.LstdFlags)
 
 	return nil
+}
+
+func (c *Client) dirSep(accountId string) string {
+	val, ok := c.imapDirSep.Load(accountId)
+	if !ok {
+		panic("Trying to get directory level separate before it's known.")
+	}
+	return val.(string)
 }
 
 func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
@@ -279,12 +295,12 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 }
 
 func (c *Client) prefetchData(accountId string) error {
-	dirs, err := c.GetDirs(accountId)
+	_, err := c.GetDirs(accountId, true)
 	if err != nil {
 		return err
 	}
 
-	for _, dir := range dirs.List() {
+	for _, dir := range c.prefetchDirs[accountId] {
 		var status *imap.DirStatus
 		var err error
 		for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
@@ -306,10 +322,7 @@ func (c *Client) prefetchData(accountId string) error {
 			c.caches[accountId].Dir(dir).SetUidValidity(status.UidValidity)
 		}
 
-	}
-
-	for _, dir := range dirs.List() {
-		err = c.prefetchDirData(accountId, dir)
+		c.prefetchDirData(accountId, dir)
 	}
 
 	return err

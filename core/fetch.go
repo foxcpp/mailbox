@@ -22,13 +22,13 @@ import (
 //
 // Function arguments are NOT checked for validity, invalid account ID will
 // lead to undefined behavior (usually panic).
-func (c *Client) GetDirs(accountId string) (StrSet, error) {
+func (c *Client) GetDirs(accountId string, forceUpdate bool) (StrSet, error) {
 	list, err := c.caches[accountId].DirList()
 	if err != nil {
 		return nil, err
 	}
 	// List should contain at least INBOX.
-	if len(list) != 0 {
+	if len(list) != 0 && !forceUpdate {
 		// Cache hit!
 		set := make(StrSet)
 		for _, name := range list {
@@ -54,11 +54,11 @@ func (c *Client) GetDirs(accountId string) (StrSet, error) {
 		return nil, fmt.Errorf("dirs %v: %v", accountId, err)
 	}
 
-	c.imapDirSep = separator
+	c.imapDirSep.Store(accountId, separator)
 	resSet := make(StrSet)
 	for _, name := range list {
-		c.caches[accountId].AddDir(c.normalizeDirName(name))
-		resSet.Add(c.normalizeDirName(name))
+		c.caches[accountId].AddDir(c.normalizeDirName(accountId, name))
+		resSet.Add(c.normalizeDirName(accountId, name))
 	}
 
 	return resSet, nil
@@ -67,12 +67,12 @@ func (c *Client) GetDirs(accountId string) (StrSet, error) {
 // Normalized dir name - directory name with all server-defined path
 // delimiters replaced with our server-independent separator (currently "|").
 
-func (c *Client) normalizeDirName(raw string) string {
-	return strings.Replace(raw, c.imapDirSep, "|", -1)
+func (c *Client) normalizeDirName(accountId, raw string) string {
+	return strings.Replace(raw, c.dirSep(accountId), "|", -1)
 }
 
-func (c *Client) rawDirName(normalized string) string {
-	return strings.Replace(normalized, "|", c.imapDirSep, -1)
+func (c *Client) rawDirName(accountId, normalized string) string {
+	return strings.Replace(normalized, "|", c.dirSep(accountId), -1)
 }
 
 // GetUnreadCount returns amount of unread messages in specified directory.
@@ -90,7 +90,7 @@ func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
 	var status *imap.DirStatus
 	// Cache miss, go and ask server.
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		status, err = c.imapConns[accountId].Status(c.rawDirName(dirName))
+		status, err = c.imapConns[accountId].Status(c.rawDirName(accountId, dirName))
 		if err == nil || !connectionError(err) {
 			break
 		}
@@ -136,7 +136,7 @@ func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]i
 	var list []imap.MessageInfo
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		list, err = c.imapConns[accountId].FetchMaillist(c.rawDirName(dirName))
+		list, err = c.imapConns[accountId].FetchMaillist(c.rawDirName(accountId, dirName))
 		if err == nil || !connectionError(err) {
 			break
 		}
@@ -149,8 +149,12 @@ func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]i
 		return nil, fmt.Errorf("msgslist %v, %v: %v", accountId, dirName, err)
 	}
 
-	c.caches[accountId].Dir(dirName).UpdateMsglist(list)
-	c.caches[accountId].Dir(dirName).MarkAsValid()
+	if err := c.caches[accountId].Dir(dirName).UpdateMsglist(list); err != nil {
+		Logger.Println("cachedb.UpdateMsgList failed:", err)
+	}
+	if err := c.caches[accountId].Dir(dirName).MarkAsValid(); err != nil {
+		Logger.Println("cachedb.MarkAsValid failed:", err)
+	}
 
 	return list, nil
 }

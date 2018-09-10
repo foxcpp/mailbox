@@ -183,8 +183,7 @@ type Dirwrapper struct {
 func OpenCacheDB(path string) (*CacheDB, error) {
 	db := new(CacheDB)
 	var err error
-	db.d, err = sql.Open("sqlite3", path+"?cache=shared")
-	//db.d.SetMaxOpenConns(1)
+	db.d, err = sql.Open("sqlite3", "file:"+path+"?cache=shared&_journal=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, err
 	}
@@ -207,9 +206,7 @@ func (db *CacheDB) initSchema() error {
 	db.d.Exec(`PRAGMA foreign_keys = ON`)
 	db.d.Exec(`PRAGMA auto_vacuum = INCREMENTAL`)
 	db.d.Exec(`PRAGMA journal_mode = WAL`)
-	// EXCLUSIVE locking_mode causes strange delays and "database is locked" errors in random placed.
-	// Probably due to database/sql's connection pooling.
-	db.d.Exec(`PRAGMA locking_mode = NORMAL`)
+	db.d.Exec(`PRAGMA locking_mode = EXLUSIVE`)
 	db.d.Exec(`PRAGMA defer_foreign_keys = ON`)
 	db.d.Exec(`PRAGMA synchronous = NORMAL`)
 	db.d.Exec(`PRAGMA temp_store = MEMORY`)

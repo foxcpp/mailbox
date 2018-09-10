@@ -14,7 +14,7 @@ func (c *Client) CreateDir(accountId, parentDir, newDir string) error {
 
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		err = c.imapConns[accountId].CreateDir(c.rawDirName(c.joinWithParentDir(parentDir, newDir)))
+		err = c.imapConns[accountId].CreateDir(c.rawDirName(accountId, c.joinWithParentDir(parentDir, newDir)))
 		if err == nil || !connectionError(err) {
 			break
 		}
@@ -37,7 +37,7 @@ func (c *Client) RemoveDir(accountId, parentDir, dir string) error {
 	var err error
 
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		err = c.imapConns[accountId].RemoveDir(c.rawDirName(dirName))
+		err = c.imapConns[accountId].RemoveDir(c.rawDirName(accountId, dirName))
 		if err == nil || !connectionError(err) {
 			break
 		}
@@ -57,8 +57,8 @@ func (c *Client) RemoveDir(accountId, parentDir, dir string) error {
 func (c *Client) MoveDir(accountId, oldParentDir, newParentDir, dir string) error {
 	Logger.Printf("Moving directory (%v, %v from %v to %v)...\n", accountId, dir, oldParentDir, newParentDir)
 	fromNorm := c.joinWithParentDir(oldParentDir, dir)
-	fromRaw := c.rawDirName(fromNorm)
-	toRaw := c.rawDirName(c.joinWithParentDir(newParentDir, dir))
+	fromRaw := c.rawDirName(accountId, fromNorm)
+	toRaw := c.rawDirName(accountId, c.joinWithParentDir(newParentDir, dir))
 
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
@@ -84,7 +84,7 @@ func (c *Client) RenameDir(accountId, oldName, newName string) error {
 
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		err = c.imapConns[accountId].RenameDir(c.rawDirName(oldName), c.rawDirName(newName))
+		err = c.imapConns[accountId].RenameDir(c.rawDirName(accountId, oldName), c.rawDirName(accountId, newName))
 		if err == nil || !connectionError(err) {
 			break
 		}

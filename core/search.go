@@ -61,7 +61,7 @@ func (c *Client) Search(accountId string, criteria SearchCriteria) ([]SearchResu
 	// searching in each directory and joining results together.
 	dirsToCheck := criteria.Dirs
 	if dirsToCheck == nil {
-		allDirs, err := c.GetDirs(accountId)
+		allDirs, err := c.GetDirs(accountId, false)
 		if err != nil {
 			return nil, err
 		}
