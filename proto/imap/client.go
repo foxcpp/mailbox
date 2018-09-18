@@ -44,6 +44,7 @@ type Client struct {
 	Callbacks         *UpdateCallbacks
 	KnownMailboxSizes map[string]uint32
 	Logger            log.Logger
+	LastConfig        common.ServConfig
 
 	maxUploadSize uint32
 
@@ -95,8 +96,8 @@ func connect(target common.ServConfig) (*client.Client, error) {
 		return nil, err
 	}
 
-	// Connection must complete in 30 seconds.
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
+	// Connection setup must complete in 15 seconds.
+	conn.SetDeadline(time.Now().Add(15 * time.Second))
 
 	var c *client.Client
 	if target.ConnType == common.TLS {
@@ -141,6 +142,7 @@ func Connect(target common.ServConfig) (*Client, error) {
 	res.uidplus = uidplus.NewClient(res.cl)
 
 	//res.cl.SetDebug(os.Stderr)
+	res.LastConfig = target
 
 	go res.updatesWatch()
 
@@ -158,14 +160,17 @@ func (c *Client) Auth(conf common.ServConfig) error {
 
 	err := c.cl.Authenticate(sasl.NewPlainClient("", conf.User, conf.Pass))
 	if err == nil {
+		c.LastConfig.User = conf.User
+		c.LastConfig.Pass = conf.Pass
+
 		go c.idleOnInbox()
 	}
 	return err
 }
 
-// Reconnectrecovers lost connection.
+// Reconnect recovers lost connection (note: it doesn't reauthenticates).
 // Note: If this function fails connection will be left in closed ("null") state.
-func (c *Client) Reconnect(target common.ServConfig) error {
+func (c *Client) Reconnect() error {
 	// Exactly that order to prevent deadlock (IDLE goroutine locks IOLock so we need to stop it before locking).
 	c.updatesDispatcherStop <- true
 	<-c.updatesDispatcherStop
@@ -176,11 +181,15 @@ func (c *Client) Reconnect(target common.ServConfig) error {
 
 	c.cl = nil
 	var err error
-	c.cl, err = connect(target)
+	c.cl, err = connect(c.LastConfig)
+	if err != nil {
+		return err
+	}
 	c.idle = idle.NewClient(c.cl)
 	c.move = move.NewClient(c.cl)
 	c.uidplus = uidplus.NewClient(c.cl)
-	return err
+
+	return nil
 }
 
 func (c *Client) Close() error {

@@ -181,7 +181,7 @@ func (c *Client) connectToServer(accountId string) *AccountError {
 	var err error
 
 	if c.imapConns[accountId] != nil {
-		if err := c.imapConns[accountId].Reconnect(c.serverCfgs[accountId].imap); err != nil {
+		if err := c.imapConns[accountId].Reconnect(); err != nil {
 			return &AccountError{accountId, err}
 		}
 		if err := c.imapConns[accountId].Auth(c.serverCfgs[accountId].imap); err != nil {
