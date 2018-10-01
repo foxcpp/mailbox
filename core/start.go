@@ -214,7 +214,7 @@ func (c *Client) connectToServer(accountId string) *AccountError {
 func (c *Client) dirSep(accountId string) string {
 	val, ok := c.imapDirSep.Load(accountId)
 	if !ok {
-		panic("Trying to get directory level separate before it's known.")
+		panic("Trying to get directory level separator before it's known.")
 	}
 	return val.(string)
 }

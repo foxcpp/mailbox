@@ -49,6 +49,7 @@ func readHeaders(res *Msg, m *message.Entity) error {
 	delete(m.Header, "To")
 	delete(m.Header, "Cc")
 	delete(m.Header, "Bcc")
+	delete(m.Header, "Content-Transfer-Encoding")
 	res.Misc = Header(m.Header)
 	return nil
 }
@@ -66,13 +67,15 @@ func readBody(res *Msg, m *message.Entity) error {
 				return err
 			}
 
-			outPart.Type.Value, outPart.Type.Params, err = part.Header.ContentType()
+			outPart.Type.Value, outPart.Type.Params, _ = part.Header.ContentType()
+			outPart.Disposition.Value, outPart.Disposition.Params, _ = part.Header.ContentDisposition()
 			outPart.Body, err = ioutil.ReadAll(part.Body)
 			if err != nil {
 				return err
 			}
 			outPart.Size = uint32(len(outPart.Body))
 			part.Header.Del("Content-Type")
+			part.Header.Del("Content-Transfer-Encoding")
 			outPart.Misc = Header(part.Header)
 
 			res.Parts = append(res.Parts, outPart)

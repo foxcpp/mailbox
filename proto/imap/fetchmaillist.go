@@ -10,7 +10,7 @@ func (c *Client) FetchMaillist(dir string) ([]MessageInfo, error) {
 	c.IOLock.Lock()
 	defer c.IOLock.Unlock()
 
-	mbox, err := c.cl.Select(dir, true)
+	mbox, err := c.ensureSelected(dir, true)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (c *Client) FetchPartialMaillist(dir string, count, offset uint32) ([]Messa
 	c.IOLock.Lock()
 	defer c.IOLock.Unlock()
 
-	mbox, err := c.cl.Select(dir, true)
+	mbox, err := c.ensureSelected(dir, true)
 	if err != nil {
 		return nil, err
 	}

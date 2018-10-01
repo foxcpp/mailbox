@@ -25,10 +25,10 @@ func (c *Client) CopyTo(fromDir string, targetDir string, uids ...uint32) error 
 	c.stopIdle()
 	defer c.resumeIdle()
 
-	if _, err := c.cl.Select(fromDir, false); err != nil {
+	if _, err := c.ensureSelected(fromDir, false); err != nil {
 		return err
 	}
-	defer c.cl.Close()
+	defer c.cl.Expunge(nil)
 
 	seqset := eimap.SeqSet{}
 	for _, i := range uids {
@@ -47,10 +47,9 @@ func (c *Client) MoveTo(fromDir string, targetDir string, uids ...uint32) error 
 	c.stopIdle()
 	defer c.resumeIdle()
 
-	if _, err := c.cl.Select(fromDir, false); err != nil {
+	if _, err := c.ensureSelected(fromDir, false); err != nil {
 		return err
 	}
-	defer c.cl.Close()
 
 	seqset := eimap.SeqSet{}
 	seqset.AddNum(uids...)
@@ -66,10 +65,9 @@ func (c *Client) Delete(dir string, uids ...uint32) error {
 	c.stopIdle()
 	defer c.resumeIdle()
 
-	if _, err := c.cl.Select(dir, false); err != nil {
+	if _, err := c.ensureSelected(dir, false); err != nil {
 		return err
 	}
-	defer c.cl.Close()
 
 	seqset := eimap.SeqSet{}
 	seqset.AddNum(uids...)
@@ -90,10 +88,9 @@ func (c *Client) Tag(dir string, tag string, uids ...uint32) error {
 	c.stopIdle()
 	defer c.resumeIdle()
 
-	if _, err := c.cl.Select(dir, false); err != nil {
+	if _, err := c.ensureSelected(dir, false); err != nil {
 		return err
 	}
-	defer c.cl.Close()
 
 	seqset := eimap.SeqSet{}
 	seqset.AddNum(uids...)
@@ -109,10 +106,9 @@ func (c *Client) UnTag(dir string, tag string, uids ...uint32) error {
 	c.stopIdle()
 	defer c.resumeIdle()
 
-	if _, err := c.cl.Select(dir, false); err != nil {
+	if _, err := c.ensureSelected(dir, false); err != nil {
 		return err
 	}
-	defer c.cl.Close()
 
 	seqset := eimap.SeqSet{}
 	seqset.AddNum(uids...)
@@ -128,11 +124,10 @@ func (c *Client) Create(dir string, flags []string, date time.Time, msg *common.
 	c.stopIdle()
 	defer c.resumeIdle()
 
-	status, err := c.cl.Select(dir, false)
+	status, err := c.ensureSelected(dir, false)
 	if err != nil {
 		return 0, err
 	}
-	defer c.cl.Close()
 
 	buf := bytes.Buffer{}
 	msg.Write(&buf)
@@ -170,7 +165,7 @@ func (c *Client) Replace(dir string, uid uint32, flags []string, date time.Time,
 	if err != nil {
 		return 0, err
 	}
-	defer c.cl.Close()
+	defer c.cl.Expunge(nil)
 
 	seqset := eimap.SeqSet{}
 	seqset.AddNum(uid)

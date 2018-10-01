@@ -27,10 +27,13 @@ func (c *Client) DirList() (delimiter string, list []string, err error) {
 type DirStatus = imap.MailboxStatus
 
 func (c *Client) Status(dir string) (*DirStatus, error) {
-	mbox, err := c.cl.Select(dir, true)
+	c.IOLock.Lock()
+	defer c.IOLock.Unlock()
+
+	mbox, err := c.cl.Select(dir, false)
 	if err != nil {
+		c.currentMailbox = ""
 		return nil, err
 	}
-	defer c.cl.Close()
 	return mbox, nil
 }

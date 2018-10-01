@@ -21,7 +21,7 @@ func (c *Client) AddAccount(name string, conf storage.AccountCfg, updateConfig b
 	if dberr != nil {
 		return &AccountError{name, err}
 	}
-	go c.prefetchData(name)
+	c.prefetchData(name)
 	//c.setSpecialUseDirs()
 
 	if updateConfig {

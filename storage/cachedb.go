@@ -418,7 +418,10 @@ func (db *CacheDB) initStmts() error {
 		return err
 	}
 
-	db.addMsg, err = db.d.Prepare(`INSERT OR REPLACE INTO meta VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	db.addMsg, err = db.d.Prepare(`
+		INSERT OR REPLACE
+		INTO meta
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -805,11 +808,15 @@ func (d *Dirwrapper) GetMsg(uid uint32) (*imap.MessageInfo, error) {
 	}
 
 	rows, err := d.parent.getMsgTags.Query(d.dir, uid)
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		return nil, err
 	}
-	if err := readTagList(msg, rows); err != nil {
-		return nil, err
+	if err == nil {
+		if err := readTagList(msg, rows); err != nil {
+			return nil, err
+		}
+	} else {
+		msg.CustomTags = []string{}
 	}
 	rows, err = d.parent.getMsgPartInfo.Query(d.dir, uid)
 	if err != nil {
@@ -929,7 +936,7 @@ func (d *Dirwrapper) ReplacePartList(msgUid uint32, newParts []common.Part) erro
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`DELETE FROM parts WHERE dir = ?, uid = ?`, d.dir, msgUid); err != nil {
+	if _, err := tx.Exec(`DELETE FROM parts WHERE dir = ? AND uid = ?`, d.dir, msgUid); err != nil {
 		return err
 	}
 
@@ -964,6 +971,9 @@ func (d *Dirwrapper) addPart(tx *sql.Tx, msgUid uint32, indx uint, prt *common.P
 	}
 
 	typeParts := strings.Split(prt.Type.Value, "/")
+	if len(typeParts) == 1 {
+		typeParts = []string{"", ""}
+	}
 	type_, subtype := typeParts[0], typeParts[1]
 	typeParams := []string{}
 	for name, value := range prt.Type.Params {

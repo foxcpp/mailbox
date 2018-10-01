@@ -47,7 +47,6 @@ type Msg struct {
 }
 
 func (ph ParametrizedHeader) String() string {
-	// TODO: Is it correct?
 	parts := []string{ph.Value}
 	for name, value := range ph.Params {
 		parts = append(parts, fmt.Sprintf("%v=%v", name, value))

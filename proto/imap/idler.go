@@ -22,7 +22,7 @@ func (c *Client) idleOnInbox() {
 	c.IOLock.Lock()
 	defer c.IOLock.Unlock()
 
-	_, err := c.cl.Select("INBOX", true)
+	_, err := c.ensureSelected("INBOX", true)
 	if err != nil {
 		c.Logger.Println("Mailbox selection failed, not entering IDLE mode:", err)
 		if err := c.recoverIdler(); err != nil {
@@ -120,7 +120,7 @@ func (c *Client) recoverIdler() error {
 		return err
 	}
 
-	if _, err := c.cl.Select("INBOX", true); err != nil {
+	if _, err := c.ensureSelected("INBOX", true); err != nil {
 		return err
 	}
 

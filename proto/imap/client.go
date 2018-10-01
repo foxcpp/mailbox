@@ -47,8 +47,7 @@ type Client struct {
 	LastConfig        common.ServConfig
 
 	maxUploadSize uint32
-
-	seenMailboxes map[string]eimap.MailboxInfo
+	currentMailbox string
 
 	updates               chan client.Update
 	updatesDispatcherStop chan bool
@@ -149,11 +148,6 @@ func Connect(target common.ServConfig) (*Client, error) {
 	return res, nil
 }
 
-func (c *Client) RawClient() *client.Client {
-	// TODO: This should be refactored into exported variable.
-	return c.cl
-}
-
 func (c *Client) Auth(conf common.ServConfig) error {
 	c.IOLock.Lock()
 	defer c.IOLock.Unlock()
@@ -207,4 +201,13 @@ func (c *Client) Logout() error {
 	c.IOLock.Lock()
 	defer c.IOLock.Unlock()
 	return c.cl.Logout()
+}
+
+// Select mailbox if necessary.
+// Must be called while IOLock is held.
+func (c *Client) ensureSelected(dir string, readonly bool) (*eimap.MailboxStatus, error) {
+	if c.cl.Mailbox() == nil || c.cl.Mailbox().Name != dir || (c.cl.Mailbox().ReadOnly && !readonly) {
+		return c.cl.Select(dir, readonly)
+	}
+	return c.cl.Mailbox(), nil
 }

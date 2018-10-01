@@ -18,11 +18,10 @@ func (c *Client) FetchPartialMail(dir string, uid uint32, filter func(string, st
 	c.IOLock.Lock()
 	defer c.IOLock.Unlock()
 
-	_, err := c.cl.Select(dir, true)
+	_, err := c.ensureSelected(dir, true)
 	if err != nil {
 		return nil, err
 	}
-	defer c.cl.Close()
 
 	seqset := eimap.SeqSet{}
 	seqset.AddNum(uid)
@@ -38,18 +37,25 @@ func (c *Client) FetchPartialMail(dir string, uid uint32, filter func(string, st
 	}
 	res := MessageToInfo(msgStruct)
 	if msgStruct.BodyStructure.MIMEType == "multipart" {
+		res.Msg.Parts = make([]common.Part, len(msgStruct.BodyStructure.Parts))
 		// Request only parts accepted by filter.
+		toDownload := make([]int, 0, len(msgStruct.BodyStructure.Parts))
 		for i, partStruct := range msgStruct.BodyStructure.Parts {
 			if filter(partStruct.MIMEType, partStruct.MIMESubType) {
-				// TODO: Can we download all parts at once?
-				part, err := c.downloadPart(uid, i)
-				if err != nil {
-					return nil, err
-				}
-				res.Msg.Parts = append(res.Msg.Parts, *part)
+				toDownload = append(toDownload, i)
 			} else {
-				res.Msg.Parts = append(res.Msg.Parts, bodyStructToPart(*partStruct))
+				res.Msg.Parts[i] = bodyStructToPart(*partStruct)
 			}
+		}
+
+		parts, err := c.downloadParts(uid, toDownload...)
+		if err != nil {
+			return nil, err
+		}
+		// resindx - Index in res.Parts.
+		// i - index in toDownload and parts.
+		for i, resindx := range toDownload {
+			res.Msg.Parts[resindx] = parts[i]
 		}
 	} else if filter(msgStruct.BodyStructure.MIMEType, msgStruct.BodyStructure.MIMESubType) {
 		// Request entire message.
@@ -83,7 +89,7 @@ func (c *Client) DownloadPart(dir string, uid uint32, partIndex int) (*common.Pa
 	c.IOLock.Lock()
 	defer c.IOLock.Unlock()
 
-	_, err := c.cl.Select(dir, true)
+	_, err := c.ensureSelected(dir, true)
 	if err != nil {
 		return nil, err
 	}
@@ -91,8 +97,51 @@ func (c *Client) DownloadPart(dir string, uid uint32, partIndex int) (*common.Pa
 	return c.downloadPart(uid, partIndex)
 }
 
+func (c *Client) downloadParts(uid uint32, partIndxs ...int) ([]common.Part, error) {
+	requestFIs := make([]eimap.FetchItem, 0, len(partIndxs) * 2)
+	for _, part := range partIndxs {
+		requestFIs = append(requestFIs, eimap.FetchItem("BODY.PEEK[" + strconv.Itoa(part+1) + ".MIME]"))
+		requestFIs = append(requestFIs, eimap.FetchItem("BODY.PEEK[" + strconv.Itoa(part+1) + "]"))
+	}
+
+	seqset := eimap.SeqSet{}
+	seqset.AddNum(uid)
+	out := make(chan *eimap.Message, 1)
+	if err := c.cl.UidFetch(&seqset, requestFIs, out); err != nil {
+		return nil, err
+	}
+	msg := <- out
+
+	res := make([]common.Part, len(partIndxs))
+	for i, part := range partIndxs {
+		for fi, bodyLiteral := range msg.Body {
+			if fi.FetchItem() == eimap.FetchItem("BODY[" + strconv.Itoa(part+1) + ".MIME]") {
+				hdr, err := message.Read(bodyLiteral)
+				if err != nil {
+					return nil, err
+				}
+
+				res[i].Type.Value, res[i].Type.Params, _ = hdr.Header.ContentType()
+				hdr.Header.Del("Content-Type")
+				res[i].Disposition.Value, res[i].Disposition.Params, _ = hdr.Header.ContentDisposition()
+				hdr.Header.Del("Content-Disposition")
+				res[i].Misc = common.Header(hdr.Header)
+			}
+			if fi.FetchItem() == eimap.FetchItem("BODY[" + strconv.Itoa(part+1) + "]") {
+				buf := make([]byte, bodyLiteral.Len())
+				if _, err := bodyLiteral.Read(buf); err != nil {
+					return nil, err
+				}
+				res[i].Body = buf
+				res[i].Size = uint32(len(buf))
+			}
+		}
+	}
+
+	return res, nil
+}
+
 func (c *Client) downloadPart(uid uint32, partIndex int) (*common.Part, error) {
-	// TODO: Allow to fetch multiple parts in one operation.
 	headerFI := eimap.FetchItem("BODY.PEEK[" + strconv.Itoa(partIndex+1) + ".MIME]")
 	bodyFI := eimap.FetchItem("BODY.PEEK[" + strconv.Itoa(partIndex+1) + "]")
 
@@ -137,6 +186,7 @@ func (c *Client) downloadPart(uid uint32, partIndex int) (*common.Part, error) {
 	res.Misc = common.Header(hdr.Header)
 
 	res.Body = buf
+	res.Size = uint32(len(buf))
 
 	return &res, nil
 }
