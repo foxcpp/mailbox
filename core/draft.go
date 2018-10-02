@@ -60,18 +60,18 @@ func (c *Client) UpdateDraft(accountId string, oldUid uint32, new *common.Msg) (
 // Function will return UID of message copy placed in Sent directory, if any
 // and zero if user disabled this.
 func (c *Client) SendMessage(accountId string, msg *common.Msg) (uint32, error) {
-	Logger.Printf("Connecting to SMTP server (%v:%v)...\n",
+	c.logger.Printf("Connecting to SMTP server (%v:%v)...\n",
 		c.serverCfgs[accountId].smtp.Host,
 		c.serverCfgs[accountId].smtp.Port)
 	client, err := smtp.Connect(c.serverCfgs[accountId].smtp)
 	if err != nil {
-		Logger.Println("Connection failed:", err)
+		c.logger.Println("Connection failed:", err)
 		return 0, err
 	}
-	Logger.Println("Authenticating to SMTP server...")
+	c.logger.Println("Authenticating to SMTP server...")
 	err = client.Auth(c.serverCfgs[accountId].smtp)
 	if err != nil {
-		Logger.Println("Authentication failed:", err)
+		c.logger.Println("Authentication failed:", err)
 		return 0, err
 	}
 
@@ -93,7 +93,7 @@ func (c *Client) SendMessage(accountId string, msg *common.Msg) (uint32, error) 
 			}
 		}
 		if err != nil {
-			Logger.Printf("Failed to copy message to Sent (%v) directory: %v", c.Accounts[accountId].Dirs.Sent, err)
+			c.logger.Printf("Failed to copy message to Sent (%v) directory: %v", c.Accounts[accountId].Dirs.Sent, err)
 		}
 		return uid, nil
 	}

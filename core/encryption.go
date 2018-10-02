@@ -68,7 +68,7 @@ func (c *Client) SetMasterPass(pass string) error {
 
 func (c *Client) prepareMasterKey(pass string) error {
 	if pass == "" {
-		Logger.Println("Alert: No master password set. Falling back to system information-dervied key")
+		c.debugLog.Println("No master password set. Falling back to system information-dervied key")
 		passB, err := sysid.SysID()
 		if err != nil {
 			return err
@@ -101,7 +101,7 @@ func (c *Client) EncryptUsingMaster(blob []byte) []byte {
 	iv := make([]byte, alg.BlockSize())
 	_, err = rand.Read(iv)
 	if err != nil {
-		Logger.Println("CRNG read fail:", err)
+		c.logger.Println("CRNG read fail:", err)
 		panic(err) // TODO: Handle it in more graceful way?
 	}
 	enc := cipher.NewCFBEncrypter(alg, iv)

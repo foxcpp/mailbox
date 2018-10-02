@@ -15,7 +15,7 @@ func passwordPrompt(prompt string) string {
 func main() {
 	c, _ := core.Launch(core.FrontendHooks{
 		PasswordPrompt: passwordPrompt,
-	})
+	}, os.Stderr)
 
 	fmt.Println("done with launch")
 	c.DownloadOfflineDirs("cock")

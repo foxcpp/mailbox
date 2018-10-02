@@ -4,8 +4,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 
 	eimap "github.com/emersion/go-imap"
@@ -58,6 +60,9 @@ type Client struct {
 	prefetchDirs map[string][]string
 
 	imapDirSep sync.Map
+
+	logger, debugLog *log.Logger
+	logFile          *os.File
 }
 
 type AccountError struct {
@@ -66,19 +71,35 @@ type AccountError struct {
 }
 
 func (e AccountError) Error() string {
-	return fmt.Sprintf("connect %v: %v", e.AccountId, e.Err)
+	return fmt.Sprintf("accountErr %v: %v", e.AccountId, e.Err)
 }
 
 // Launch reads client configuration and connects to servers.
-func Launch(hooks FrontendHooks) (*Client, error) {
+//
+// hooks argument provides set of callbacks to call on various events. All functions must be provided.
+// userLogOut is where log messages meant for user should be written.
+func Launch(hooks FrontendHooks, userLogOut io.Writer) (*Client, error) {
 	res := new(Client)
 	res.Hooks = hooks
 
-	Logger.Println("Loading configuration...")
+	logFile, err := os.OpenFile(filepath.Join(storage.GetDirectory(), "log.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		// Not critical, ignore.
+		res.logger = log.New(userLogOut, "", log.LstdFlags)
+		res.debugLog = log.New(userLogOut, "core[debug]: ", log.LstdFlags)
+		res.debugLog.Println("Failed to open log file. Is everything fine with permissions?", err)
+	} else {
+		res.logFile = logFile
+		res.logger = log.New(io.MultiWriter(userLogOut, logFile), "", log.LstdFlags)
+		res.debugLog = log.New(logFile, "core[debug]: ", log.LstdFlags)
+	}
+
+	res.logger.Println("Loading configuration...")
 	globalCfg, err := storage.LoadGlobal()
 	if err != nil {
 		return nil, err
 	}
+
 	res.GlobalCfg = *globalCfg
 	accounts, err := storage.LoadAllAccounts()
 	if err != nil {
@@ -107,7 +128,7 @@ func Launch(hooks FrontendHooks) (*Client, error) {
 	res.prefetchDirs = make(map[string][]string)
 
 	for name, info := range accounts {
-		Logger.Println("Setting up account", name+"...")
+		res.debugLog.Println("Setting up account", name+"...")
 		err := res.AddAccount(name, info, false /* write config */)
 		if err != nil {
 			res.SkippedAccounts = append(res.SkippedAccounts, *err)
@@ -124,6 +145,7 @@ func (c *Client) Stop() {
 	for name, _ := range c.Accounts {
 		c.RemoveAccount(name, false)
 	}
+	c.logFile.Close()
 }
 
 func (c *Client) prepareServerConfig(accountId string) {
@@ -190,23 +212,23 @@ func (c *Client) connectToServer(accountId string) *AccountError {
 		return nil
 	}
 
-	Logger.Printf("Connecting to IMAP server (%v:%v)...\n",
+	c.logger.Printf("Connecting to IMAP server (%v:%v)...\n",
 		c.serverCfgs[accountId].imap.Host,
 		c.serverCfgs[accountId].imap.Port)
 	c.imapConns[accountId], err = imap.Connect(c.serverCfgs[accountId].imap)
 	if err != nil {
-		Logger.Println("Connection failed:", err)
+		c.logger.Println("Connection failed:", err)
 		return &AccountError{accountId, err}
 	}
-	Logger.Println("Authenticating to IMAP server...")
+	c.logger.Println("Authenticating to IMAP server...")
 	err = c.imapConns[accountId].Auth(c.serverCfgs[accountId].imap)
 	if err != nil {
-		Logger.Println("Authentication failed:", err)
+		c.logger.Println("Authentication failed:", err)
 		return &AccountError{accountId, err}
 	}
 
 	c.imapConns[accountId].Callbacks = c.makeUpdateCallbacks(accountId)
-	c.imapConns[accountId].Logger = *log.New(os.Stderr, "[mailbox/proto/imap:"+accountId+"] ", log.LstdFlags)
+	c.imapConns[accountId].Logger = *log.New(c.logFile, "imap["+accountId+",debug] ", log.LstdFlags)
 
 	return nil
 }
@@ -222,13 +244,14 @@ func (c *Client) dirSep(accountId string) string {
 func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 	return &imap.UpdateCallbacks{
 		NewMessage: func(dir string, seqnum uint32) {
-			Logger.Printf("New message for account %v in dir %v, sequence number: %v.\n", accountId, dir, seqnum)
+			c.logger.Printf("New message for account %v in dir %v.\n", accountId, dir)
+			c.debugLog.Printf("New message for account %v in dir %v, sequence number: %v.\n", accountId, dir, seqnum)
 
 			// TODO: Measure performance impact of this extract resolve request
 			// and consider exposing seqnum-based operations in imap.Client.
 			uid, err := c.ResolveUid(accountId, dir, seqnum)
 			if err != nil {
-				Logger.Println("Alert: Reloading message list: failed to download message:", err)
+				c.debugLog.Println("Alert: Reloading message list: failed to download message:", err)
 				c.reloadMaillist(accountId, dir)
 				return
 			}
@@ -236,7 +259,7 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			count := c.caches[accountId].Dir(dir).MsgsCount()
 
 			if seqnum != uint32(count+1) {
-				Logger.Println("Alert: Reloading message list: sequence numbers de-synced.")
+				c.debugLog.Println("Alert: Reloading message list: sequence numbers de-synced.")
 				c.reloadMaillist(accountId, dir)
 				return
 			}
@@ -251,13 +274,13 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 				err = c.connectToServer(accountId)
 			}
 			if err != nil {
-				Logger.Println("Alert: Reloading message list: failed to download message:", err)
+				c.debugLog.Println("Alert: Reloading message list: failed to download message:", err)
 				c.reloadMaillist(accountId, dir)
 				return
 			}
 
 			if err := c.caches[accountId].Dir(dir).AddMsg(msg); err != nil {
-				Logger.Println("Cache AddMsg:", err)
+				c.debugLog.Println("Cache AddMsg:", err)
 			}
 
 			if c.Hooks.ResetDir != nil {
@@ -265,23 +288,24 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			}
 		},
 		MessageRemoved: func(dir string, seqnum uint32) {
-			Logger.Printf("Message removed from dir %v on account %v, sequence number: %v.\n", dir, accountId, seqnum)
+			c.logger.Printf("Message removed from dir %v on account %v.\n", dir, accountId, seqnum)
+			c.debugLog.Printf("Message removed from dir %v on account %v, sequence number: %v.\n", dir, accountId, seqnum)
 
 			count := c.caches[accountId].Dir(dir).MsgsCount()
 
 			if uint32(count) < seqnum {
-				Logger.Println("Alert: Reloading message list: sequence number is out of range.")
+				c.debugLog.Println("Alert: Reloading message list: sequence number is out of range.")
 				c.reloadMaillist(accountId, dir)
 				return
 			}
 			// Look-up UID to remove in cache.
 			uid, err := c.caches[accountId].Dir(dir).ResolveUid(seqnum)
 			if err != nil {
-				Logger.Println("Alert: Reloading message list: failed to resolve UID for removed message.")
+				c.debugLog.Println("Alert: Reloading message list: failed to resolve UID for removed message.")
 				c.reloadMaillist(accountId, dir)
 			}
 			if err := c.caches[accountId].Dir(dir).DelMsg(uid); err != nil {
-				Logger.Println("Cache DelMsg:", err)
+				c.debugLog.Println("Cache DelMsg:", err)
 			}
 
 			if c.Hooks.ResetDir != nil {
@@ -300,6 +324,7 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 				return
 			}
 			if uidv != status.UidValidity {
+				c.debugLog.Println("UIDVALIDITY changed for dir", status.Name)
 				c.reloadMaillist(accountId, status.Name)
 				c.caches[accountId].Dir(status.Name).SetUidValidity(uidv)
 			}
@@ -332,22 +357,17 @@ func (c *Client) prefetchData(accountId string) error {
 
 		cacheVal, err := c.caches[accountId].Dir(dir).UidValidity()
 		if cacheVal != status.UidValidity || err == storage.ErrNullValue {
+			if cacheVal != status.UidValidity {
+				c.debugLog.Println("UIDVALIDITY changed")
+			}
 			c.caches[accountId].Dir(dir).InvalidateMsglist()
 			c.caches[accountId].Dir(dir).SetUidValidity(status.UidValidity)
 		}
 
-		c.prefetchDirData(accountId, dir)
+		c.getMsgsList(accountId, dir, true)
 	}
 
 	return err
-}
-
-func (c *Client) prefetchDirData(accountId, dir string) error {
-	_, err := c.getMsgsList(accountId, dir, true)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (c *Client) reloadMaillist(accountId string, dir string) {

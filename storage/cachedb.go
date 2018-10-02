@@ -313,7 +313,7 @@ func (db *CacheDB) initStmts() error {
 		return err
 	}
 
-	db.addDir, err = db.d.Prepare(`INSERT OR REPLACE INTO dirinfo(dir) VALUES (?)`)
+	db.addDir, err = db.d.Prepare(`INSERT OR IGNORE INTO dirinfo(dir) VALUES (?)`)
 	if err != nil {
 		return err
 	}
@@ -515,7 +515,7 @@ func (d *Dirwrapper) UidValidity() (uint32, error) {
 		return 0, err
 	}
 	if !value.Valid {
-		return 0, ErrNullValue
+		return uint32(value.Int64), ErrNullValue
 	}
 	return uint32(value.Int64), nil
 }

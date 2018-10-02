@@ -7,6 +7,7 @@ import (
 )
 
 func (c *Client) AddAccount(name string, conf storage.AccountCfg, updateConfig bool) *AccountError {
+	// TODO: Split into AddAccount and LoadAccount.
 	c.Accounts[name] = conf
 
 	c.prepareServerConfig(name)
@@ -25,13 +26,14 @@ func (c *Client) AddAccount(name string, conf storage.AccountCfg, updateConfig b
 	//c.setSpecialUseDirs()
 
 	if updateConfig {
-		Logger.Println("Writting configuration for account", name+"...")
+		c.debugLog.Println("Writting configuration for account", name+"...")
 		return &AccountError{name, storage.SaveAccount(name, conf)}
 	}
 	return nil
 }
 
 func (c *Client) RemoveAccount(name string, updateConfig bool) error {
+	// TODO: Split into RemoveAccount and UnloadAccount.
 	c.caches[name].Close()
 	delete(c.caches, name)
 	delete(c.Accounts, name)

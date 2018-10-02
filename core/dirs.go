@@ -10,7 +10,7 @@ func (c *Client) joinWithParentDir(parentDir, childDir string) string {
 // CreateDir... creates directories!
 // Note: To create directory with root as parent pass "" as parentDir.
 func (c *Client) CreateDir(accountId, parentDir, newDir string) error {
-	Logger.Printf("Creating directory (%v, %v, %v)...\n", accountId, parentDir, newDir)
+	c.debugLog.Printf("Creating directory (%v, %v, %v)...\n", accountId, parentDir, newDir)
 
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
@@ -23,7 +23,7 @@ func (c *Client) CreateDir(accountId, parentDir, newDir string) error {
 		}
 	}
 	if err != nil {
-		Logger.Printf("CreateSubdir failed (%v, %v, %v): %v\n", accountId, parentDir, newDir, err)
+		c.debugLog.Printf("CreateSubdir failed (%v, %v, %v): %v\n", accountId, parentDir, newDir, err)
 	} else {
 		c.caches[accountId].AddDir(c.joinWithParentDir(parentDir, newDir))
 	}
@@ -31,7 +31,7 @@ func (c *Client) CreateDir(accountId, parentDir, newDir string) error {
 }
 
 func (c *Client) RemoveDir(accountId, parentDir, dir string) error {
-	Logger.Printf("Removing directory (%v, %v, %v)...\n", accountId, parentDir, dir)
+	c.debugLog.Printf("Removing directory (%v, %v, %v)...\n", accountId, parentDir, dir)
 	dirName := c.joinWithParentDir(parentDir, dir)
 
 	var err error
@@ -47,7 +47,7 @@ func (c *Client) RemoveDir(accountId, parentDir, dir string) error {
 	}
 
 	if err != nil {
-		Logger.Printf("CreateSubdir failed (%v, %v, %v): %v\n", accountId, parentDir, dir, err)
+		c.debugLog.Printf("CreateSubdir failed (%v, %v, %v): %v\n", accountId, parentDir, dir, err)
 	} else {
 		c.caches[accountId].RemoveDir(dirName)
 	}
@@ -55,7 +55,7 @@ func (c *Client) RemoveDir(accountId, parentDir, dir string) error {
 }
 
 func (c *Client) MoveDir(accountId, oldParentDir, newParentDir, dir string) error {
-	Logger.Printf("Moving directory (%v, %v from %v to %v)...\n", accountId, dir, oldParentDir, newParentDir)
+	c.debugLog.Printf("Moving directory (%v, %v from %v to %v)...\n", accountId, dir, oldParentDir, newParentDir)
 	fromNorm := c.joinWithParentDir(oldParentDir, dir)
 	fromRaw := c.rawDirName(accountId, fromNorm)
 	toRaw := c.rawDirName(accountId, c.joinWithParentDir(newParentDir, dir))
@@ -72,7 +72,7 @@ func (c *Client) MoveDir(accountId, oldParentDir, newParentDir, dir string) erro
 	}
 
 	if err != nil {
-		Logger.Printf("MoveDir failed (%v, %v from %v to %v): %v\n", accountId, dir, oldParentDir, newParentDir, err)
+		c.debugLog.Printf("MoveDir failed (%v, %v from %v to %v): %v\n", accountId, dir, oldParentDir, newParentDir, err)
 	} else {
 		c.caches[accountId].RenameDir(fromNorm, c.joinWithParentDir(newParentDir, dir))
 	}
@@ -80,7 +80,7 @@ func (c *Client) MoveDir(accountId, oldParentDir, newParentDir, dir string) erro
 }
 
 func (c *Client) RenameDir(accountId, oldName, newName string) error {
-	Logger.Printf("Renaming directory (%v, from %v to %v)...\n", accountId, oldName, newName)
+	c.debugLog.Printf("Renaming directory (%v, from %v to %v)...\n", accountId, oldName, newName)
 
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
@@ -94,7 +94,7 @@ func (c *Client) RenameDir(accountId, oldName, newName string) error {
 	}
 
 	if err != nil {
-		Logger.Printf("RenameDir failed (%v, from %v to %v): %v\n", accountId, oldName, newName, err)
+		c.debugLog.Printf("RenameDir failed (%v, from %v to %v): %v\n", accountId, oldName, newName, err)
 	} else {
 		c.caches[accountId].RenameDir(oldName, newName)
 	}

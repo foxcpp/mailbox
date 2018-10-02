@@ -37,7 +37,7 @@ func (c *Client) GetDirs(accountId string, forceUpdate bool) (StrSet, error) {
 		return set, nil
 	}
 
-	Logger.Printf("Downloading directories list for %v...\n", accountId)
+	c.debugLog.Printf("Downloading directories list for %v...\n", accountId)
 	// Cache miss, go and ask server.
 	var separator string
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
@@ -50,7 +50,7 @@ func (c *Client) GetDirs(accountId string, forceUpdate bool) (StrSet, error) {
 		}
 	}
 	if err != nil {
-		Logger.Printf("Directories list download (%v) failed: %v\n", accountId, err)
+		c.logger.Printf("Directories list download (%v) failed: %v\n", accountId, err)
 		return nil, fmt.Errorf("dirs %v: %v", accountId, err)
 	}
 
@@ -59,6 +59,17 @@ func (c *Client) GetDirs(accountId string, forceUpdate bool) (StrSet, error) {
 	for _, name := range list {
 		c.caches[accountId].AddDir(c.normalizeDirName(accountId, name))
 		resSet.Add(c.normalizeDirName(accountId, name))
+	}
+	cached, err := c.caches[accountId].DirList()
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range cached {
+		if !resSet.Present(dir) {
+			if err := c.caches[accountId].RemoveDir(dir); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return resSet, nil
@@ -99,7 +110,7 @@ func (c *Client) GetUnreadCount(accountId, dirName string) (uint, error) {
 		}
 	}
 	if err != nil {
-		Logger.Printf("Directories status download (%v, %v) failed: %v\n", accountId, dirName, err)
+		c.logger.Printf("Directories status download (%v, %v) failed: %v\n", accountId, dirName, err)
 		return 0, fmt.Errorf("unreadcount %v, %v: %v", accountId, dirName, err)
 	}
 
@@ -131,7 +142,7 @@ func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]i
 		}
 	}
 
-	Logger.Printf("Downloading message list for %v, %v...\n", accountId, dirName)
+	c.debugLog.Printf("Downloading message list for %v, %v...\n", accountId, dirName)
 	// Cache miss, go and ask server.
 	var list []imap.MessageInfo
 	var err error
@@ -145,15 +156,15 @@ func (c *Client) getMsgsList(accountId, dirName string, forceDownload bool) ([]i
 		}
 	}
 	if err != nil {
-		Logger.Printf("Message list download (%v, %v) failed: %v\n", accountId, dirName, err)
+		c.logger.Printf("Message list download (%v, %v) failed: %v\n", accountId, dirName, err)
 		return nil, fmt.Errorf("msgslist %v, %v: %v", accountId, dirName, err)
 	}
 
 	if err := c.caches[accountId].Dir(dirName).UpdateMsglist(list); err != nil {
-		Logger.Println("cachedb.UpdateMsgList failed:", err)
+		c.debugLog.Println("cachedb.UpdateMsgList failed:", err)
 	}
 	if err := c.caches[accountId].Dir(dirName).MarkAsValid(); err != nil {
-		Logger.Println("cachedb.MarkAsValid failed:", err)
+		c.debugLog.Println("cachedb.MarkAsValid failed:", err)
 	}
 
 	return list, nil
@@ -178,7 +189,7 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated
 		}
 	}
 
-	Logger.Printf("Downloading message text for (%v, %v, %v)...\n", accountId, dirName, uid)
+	c.logger.Printf("Downloading message text for (%v, %v, %v)...\n", accountId, dirName, uid)
 	var msg *imap.MessageInfo
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
@@ -191,13 +202,13 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated
 		}
 	}
 	if err != nil {
-		Logger.Printf("Message text download (%v, %v, %v) failed: %v\n", accountId, dirName, uid, err)
+		c.logger.Printf("Message text download (%v, %v, %v) failed: %v\n", accountId, dirName, uid, err)
 		return nil, fmt.Errorf("msgtext %v, %v, %v: %v", accountId, dirName, uid, err)
 	}
 
 	// Update information in cache.
 	if err := c.caches[accountId].Dir(dirName).ReplacePartList(msg.UID, msg.Parts); err != nil {
-		Logger.Println("Cache ReplacePartList:", err)
+		c.debugLog.Println("Cache ReplacePartList:", err)
 	}
 
 	return msg, nil
@@ -241,7 +252,7 @@ func (c *Client) ResolveUid(accountId, dir string, seqnum uint32) (uint32, error
 }
 
 func (c *Client) DownloadOfflineDirs(accountId string) {
-	Logger.Println("Downloading messages for offline use...")
+	c.logger.Println("Downloading messages for offline use...")
 	for _, dir := range c.Accounts[accountId].Dirs.DownloadForOffline {
 		list, err := c.GetMsgsList(accountId, dir)
 		if err != nil {
