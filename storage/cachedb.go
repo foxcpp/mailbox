@@ -929,6 +929,20 @@ func (d *Dirwrapper) addMsg(tx *sql.Tx, msg *imap.MessageInfo) error {
 	return nil
 }
 
+func (d *Dirwrapper) ReplaceTagList(msgUid uint32, newList []string) error {
+	tx, err := d.parent.d.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Stmt(d.parent.delMsgTags).Exec(d.dir, msgUid); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (d *Dirwrapper) ReplacePartList(msgUid uint32, newParts []common.Part) error {
 	tx, err := d.parent.d.Begin()
 	if err != nil {

@@ -289,7 +289,21 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			}
 		},
 		MessageUpdate: func(dir string, info *eimap.Message) {
-			// TODO
+			// Basically, this is only Flags change.
+			if info.Uid != 0 && info.Flags != nil {
+				c.caches[accountId].Dir(dir).ReplaceTagList(info.Uid, info.Flags)
+			}
+		},
+		MboxUpdate: func(status *eimap.MailboxStatus) {
+			uidv, err := c.caches[accountId].Dir(status.Name).UidValidity()
+			if err != nil {
+				return
+			}
+			if uidv != status.UidValidity {
+				c.reloadMaillist(accountId, status.Name)
+				c.caches[accountId].Dir(status.Name).SetUidValidity(uidv)
+			}
+			c.caches[accountId].Dir(status.Name).SetUnreadCount(uint(status.Unseen))
 		},
 	}
 }
@@ -346,5 +360,5 @@ func (c *Client) reloadMaillist(accountId string, dir string) {
 
 // Returns true if passed error is caused by server connection loss and request should be retries.
 func connectionError(err error) bool {
-	return err.Error() == "imap: connection closed"
+	return err.Error() == "imap: connection closed" || err.Error() == "short write"
 }

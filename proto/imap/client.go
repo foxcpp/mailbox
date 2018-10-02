@@ -38,6 +38,8 @@ type UpdateCallbacks struct {
 	NewMessage     func(dir string, seqnum uint32)
 	MessageUpdate  func(dir string, newInfo *eimap.Message)
 	MessageRemoved func(dir string, seqnum uint32)
+
+	MboxUpdate func(status *eimap.MailboxStatus)
 }
 
 type Client struct {
@@ -46,7 +48,7 @@ type Client struct {
 	Logger            log.Logger
 	LastConfig        common.ServConfig
 
-	maxUploadSize uint32
+	maxUploadSize  uint32
 	currentMailbox string
 
 	updates               chan client.Update

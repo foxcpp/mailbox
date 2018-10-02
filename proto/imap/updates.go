@@ -13,6 +13,9 @@ func (c *Client) updatesWatch() {
 			switch update.(type) {
 			case *client.MailboxUpdate:
 				mboxUpd := update.(*client.MailboxUpdate)
+				if c.Callbacks != nil {
+					c.Callbacks.MboxUpdate(mboxUpd.Mailbox)
+				}
 				if _, prs := c.KnownMailboxSizes[mboxUpd.Mailbox.Name]; !prs {
 					// We didn't seen this mailbox before, just record size.
 					c.KnownMailboxSizes[mboxUpd.Mailbox.Name] = mboxUpd.Mailbox.Messages
