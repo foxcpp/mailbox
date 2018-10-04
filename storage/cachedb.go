@@ -18,8 +18,6 @@ import (
 // Returned if requested information is not cached in DB.
 var ErrNullValue = errors.New("cachedb: null value encountered")
 
-// TODO: Consider using ATTACH DATABASE to have one connection for multiple accounts.
-
 /*
 Simple wrapper around SQLite-based cache.
 
@@ -28,12 +26,16 @@ Yes, we use SQLite for cache. It's simple, reliable and flexible solution.
 Database schema:
 
 dirinfo:
-Various information about directories. Currently only UIDVALIDITY value.
+Various information about directories.
 
 Columns:
 - dir (string) [index]
 - uidvalidity (int, nullable)
+  UIDVALIDITY for UID fields in other tables.
 - unreadcount (int, nullable)
+  Currently not used correctly. Reserved for future additions.
+- msglistvalid (int)
+  Used to separate "empty" and "missing" directory cache.
 
 meta:
 Various meta-information extracted from headers.

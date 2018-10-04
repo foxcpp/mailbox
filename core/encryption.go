@@ -7,8 +7,9 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"github.com/foxcpp/mailbox/storage"
 
-	sysid "github.com/foxcpp/go-sysid"
+	"github.com/foxcpp/go-sysid"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/blake2b"
 )
@@ -30,6 +31,8 @@ This is how we store encrypted data:
 |	  IV 	 ||	BLAKE2b sum |      data		 ||
 |			 |+-------------+----------------+|
 +------------+--------------------------------+
+
+FIXME: Cache encryption is disabled because we migrated to SQLite. Consider using SQLCypher.
 */
 
 const (
@@ -38,32 +41,42 @@ const (
 
 var (
 	ErrInvalidKey  = errors.New("decrypt: invalid key or corrupted data")
-	ErrInvalidSalt = errors.New("preparekey: invalid salt")
+	ErrInvalidSalt = errors.New("prepare key: invalid salt")
 )
 
-func (c *Client) SetMasterPass(pass string) error {
-	havePass := (pass != "")
+// ChangeMasterPass changes master password used for encryption and reinitializes master key.
+//
+// This function actually should never fail but if it does - we have a severe problem.
+// In this case successful ChangeMasterPass MUST follow unsuccessful within one session
+// one to avoid corruption.
+func (c *Client) ChangeMasterPass(pass string) error {
+	// NOTE: For master key initalization on client startup use prepareMasterKey
+	// directly.
+	havePass := pass != ""
 	c.GlobalCfg.Encryption.UseMasterPass = &havePass
+	c.GlobalCfg.Encryption.MasterKeySalt = "" // prepareMasterKey will generate new salt.
 
-	// Do not reuse salt.
-	salt := make([]byte, 64)
-	_, err := rand.Read(salt)
-	if err != nil {
+	if err := c.prepareMasterKey(pass); err != nil {
 		return err
 	}
-	c.GlobalCfg.Encryption.MasterKeySalt = hex.EncodeToString(salt)
 
 	// Re-encrypt all things.
-	//for acc, _ := range c.caches {
-	//	//TODO: c.caches[acc].ChangeKey()
-	//}
 	for acc, conf := range c.serverCfgs {
 		cfg := c.Accounts[acc]
 		cfg.Credentials.Pass = hex.EncodeToString(c.EncryptUsingMaster([]byte(conf.imap.Pass)))
 		c.Accounts[acc] = cfg
+
+		// Write new encrypted password to file.
+		storage.SaveAccount(acc, c.Accounts[acc])
 	}
 
-	return c.prepareMasterKey(pass)
+	/*
+		for _, cache := range c.caches {
+			cache.ChangeKey(c.masterKey)
+		}
+	*/
+
+	return nil
 }
 
 func (c *Client) prepareMasterKey(pass string) error {
@@ -76,6 +89,8 @@ func (c *Client) prepareMasterKey(pass string) error {
 		pass = string(passB)
 	}
 
+	// TODO: Way to check if password is correct.
+
 	if c.GlobalCfg.Encryption.MasterKeySalt == "" {
 		salt := make([]byte, 64)
 		_, err := rand.Read(salt)
@@ -83,6 +98,10 @@ func (c *Client) prepareMasterKey(pass string) error {
 			return err
 		}
 		c.GlobalCfg.Encryption.MasterKeySalt = hex.EncodeToString(salt)
+		if err := storage.SaveGlobal(&c.GlobalCfg); err != nil {
+			c.logger.Println("Failed to write new master key salt to config. Aborting.")
+			return err
+		}
 	}
 
 	salt, err := hex.DecodeString(c.GlobalCfg.Encryption.MasterKeySalt)
@@ -94,8 +113,14 @@ func (c *Client) prepareMasterKey(pass string) error {
 	return nil
 }
 
+// EncryptUsingMaster encrypts arbitrary blob using application-wide master key.
+//
+// prepareMasterKey must be done before using this function.
 func (c *Client) EncryptUsingMaster(blob []byte) []byte {
 	key := c.masterKey
+	if len(key) == 0 {
+		panic("encrypt: trying to use master key before initialization")
+	}
 
 	alg, err := aes.NewCipher(key)
 	iv := make([]byte, alg.BlockSize())
@@ -117,8 +142,15 @@ func (c *Client) EncryptUsingMaster(blob []byte) []byte {
 	return result
 }
 
+// DecryptUsingMaster decrypts message encrypted using EncryptUsingMaster.
+//
+// This is not raw decryption algorithm, it considers meta-data added by
+// EncryptUsingMaster (checksum and IV).
 func (c *Client) DecryptUsingMaster(blob []byte) ([]byte, error) {
 	key := c.masterKey
+	if len(key) == 0 {
+		panic("decrypt: trying to use master key before initialization")
+	}
 
 	alg, err := aes.NewCipher(key)
 	if err != nil {

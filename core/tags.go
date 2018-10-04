@@ -3,14 +3,14 @@ package core
 type Tag string
 
 const (
-	ReadenT   Tag = `\Seen`
-	AnsweredT Tag = `\Answered`
+	ReadenTag   Tag = `\Seen`
+	AnsweredTag Tag = `\Answered`
 )
 
 func (c *Client) Tag(accountId, dir string, tag Tag, uids ...uint32) error {
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		err = c.imapConns[accountId].Tag(dir, string(tag), uids...)
+		err = c.imapConns[accountId].Tag(c.rawDirName(accountId, dir), string(tag), uids...)
 		if err == nil || !connectionError(err) {
 			break
 		}
@@ -28,10 +28,10 @@ func (c *Client) Tag(accountId, dir string, tag Tag, uids ...uint32) error {
 	return nil
 }
 
-func (c *Client) Untag(accountId, dir string, tag Tag, uids ...uint32) error {
+func (c *Client) UnTag(accountId, dir string, tag Tag, uids ...uint32) error {
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		err = c.imapConns[accountId].UnTag(dir, string(tag), uids...)
+		err = c.imapConns[accountId].UnTag(c.rawDirName(accountId, dir), string(tag), uids...)
 		if err == nil || !connectionError(err) {
 			break
 		}

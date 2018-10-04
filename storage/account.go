@@ -39,6 +39,10 @@ type AccountCfg struct {
 	CopyToSent *bool
 }
 
+// LoadAccount reads configuration for account 'name'
+//
+// Default values for missing values are added to returned object so you
+// don't have to worry about it.
 func LoadAccount(name string) (*AccountCfg, error) {
 	path := filepath.Join(GetDirectory(), "accounts", name+".yml")
 	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), os.ModePerm)
@@ -81,9 +85,6 @@ func LoadAccount(name string) (*AccountCfg, error) {
 		res.CopyToSent = &copyToSent
 	}
 
-	// Write new default values to file if they are missing.
-	SaveAccount(name, res)
-
 	return &res, nil
 }
 
@@ -95,9 +96,10 @@ func basename(s string) string {
 	return s
 }
 
+// LoadAllAccounts reads configuration files for all accounts.
 func LoadAllAccounts() (map[string]AccountCfg, error) {
 	res := make(map[string]AccountCfg)
-	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), 0700)
+	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), 07777)
 	if err != nil {
 		return nil, fmt.Errorf("loadallaccounts: %v", err)
 	}
@@ -119,10 +121,13 @@ func LoadAllAccounts() (map[string]AccountCfg, error) {
 	return res, nil
 }
 
+// SaveAccount saves passed config as a configuration for account 'name'.
+//
+// Existing configuration is removed.
 func SaveAccount(name string, conf AccountCfg) error {
 	path := filepath.Join(GetDirectory(), "accounts", name+".yml")
 
-	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), 0700)
+	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), 0777)
 	if err != nil {
 		return fmt.Errorf("saveaccount %v: %v", name, err)
 	}
@@ -132,13 +137,14 @@ func SaveAccount(name string, conf AccountCfg) error {
 		return fmt.Errorf("saveaccount %v: %v", name, err)
 	}
 
-	return ioutil.WriteFile(path, bytes, 0600)
+	return ioutil.WriteFile(path, bytes, 0666)
 }
 
+//  DeleteAccount removes configuration for account 'name' from disk.
 func DeleteAccount(name string) error {
 	path := filepath.Join(GetDirectory(), "accounts", name+".yml")
 
-	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), 0700)
+	err := os.MkdirAll(filepath.Join(GetDirectory(), "accounts"), 0777)
 	if err != nil {
 		return fmt.Errorf("deleteaccount %v: %v", name, err)
 	}

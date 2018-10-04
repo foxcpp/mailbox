@@ -7,13 +7,18 @@ import (
 	"github.com/foxcpp/mailbox/proto/smtp"
 )
 
+// SaveDraft saves "draft" message to account's draft directory.
+//
+// draft argument must not be null. Invalid accountId leads to undefined behavior (probably panic).
+//
+// UID of saved message is returned.
 func (c *Client) SaveDraft(accountId string, draft *common.Msg) (uint32, error) {
 	draftDir := c.Accounts[accountId].Dirs.Drafts
 
 	var uid uint32
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		uid, err = c.imapConns[accountId].Create(draftDir, []string{`\Draft`}, time.Now(), draft)
+		uid, err = c.imapConns[accountId].Create(c.rawDirName(accountId, draftDir), []string{`\Draft`}, time.Now(), draft)
 		if err == nil || !connectionError(err) {
 			break
 		}
@@ -25,19 +30,30 @@ func (c *Client) SaveDraft(accountId string, draft *common.Msg) (uint32, error) 
 		return 0, err
 	}
 
-	// Shouldn't we receive update which then will be handled by our code?
+	// Server is free to modify message somehow so we can't just
+	// add message to cache. Fortunately, drafts directory rarely
+	// grows big so it's ok to just reload it.
+	//
+	// TODO: Do servers actually modify messages? Is there anything
+	// we can't predict (like, flags automatically set by server)?
 	c.reloadMaillist(accountId, draftDir)
 
 	return uid, nil
 }
 
+// UpdateDraft replaces old draft message with new with different contents.
+//
+// draft argument must not be null. Invalid accountId leads to undefined behavior (probably panic).
+//
+// Old message is removed and new one is created because IMAP doesn't allows to change existing
+// messages. If error happens - older message is preserved.
 func (c *Client) UpdateDraft(accountId string, oldUid uint32, new *common.Msg) (uint32, error) {
 	draftDir := c.Accounts[accountId].Dirs.Drafts
 
 	var uid uint32
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		uid, err = c.imapConns[accountId].Replace(draftDir, oldUid, []string{`\Draft`}, time.Now(), new)
+		uid, err = c.imapConns[accountId].Replace(c.rawDirName(accountId, draftDir), oldUid, []string{`\Draft`}, time.Now(), new)
 		if err == nil || !connectionError(err) {
 			break
 		}
@@ -84,7 +100,7 @@ func (c *Client) SendMessage(accountId string, msg *common.Msg) (uint32, error) 
 		var uid uint32
 		var err error
 		for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-			uid, err = c.imapConns[accountId].Create(c.Accounts[accountId].Dirs.Sent, []string{`\Seen`}, time.Now(), msg)
+			uid, err = c.imapConns[accountId].Create(c.rawDirName(accountId, c.Accounts[accountId].Dirs.Sent), []string{`\Seen`}, time.Now(), msg)
 			if err == nil || !connectionError(err) {
 				break
 			}

@@ -2,8 +2,6 @@ package core
 
 import (
 	"fmt"
-	"strings"
-
 	"github.com/foxcpp/mailbox/proto/common"
 	"github.com/foxcpp/mailbox/proto/imap"
 	"github.com/foxcpp/mailbox/storage"
@@ -73,17 +71,6 @@ func (c *Client) GetDirs(accountId string, forceUpdate bool) (StrSet, error) {
 	}
 
 	return resSet, nil
-}
-
-// Normalized dir name - directory name with all server-defined path
-// delimiters replaced with our server-independent separator (currently "|").
-
-func (c *Client) normalizeDirName(accountId, raw string) string {
-	return strings.Replace(raw, c.dirSep(accountId), "|", -1)
-}
-
-func (c *Client) rawDirName(accountId, normalized string) string {
-	return strings.Replace(normalized, "|", c.dirSep(accountId), -1)
 }
 
 // GetUnreadCount returns amount of unread messages in specified directory.
@@ -193,7 +180,7 @@ func (c *Client) GetMsgText(accountId, dirName string, uid uint32, allowOutdated
 	var msg *imap.MessageInfo
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		msg, err = c.imapConns[accountId].FetchPartialMail(dirName, uid, imap.TextOnly)
+		msg, err = c.imapConns[accountId].FetchPartialMail(c.rawDirName(accountId, dirName), uid, imap.TextOnly)
 		if err == nil || !connectionError(err) {
 			break
 		}
@@ -225,7 +212,7 @@ func (c *Client) GetMsgPart(accountId, dirName string, uid uint32, partIndex int
 	var prt *common.Part
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		prt, err = c.imapConns[accountId].DownloadPart(dirName, uid, partIndex)
+		prt, err = c.imapConns[accountId].DownloadPart(c.rawDirName(accountId, dirName), uid, partIndex)
 		if err == nil || !connectionError(err) {
 			break
 		}
@@ -236,11 +223,11 @@ func (c *Client) GetMsgPart(accountId, dirName string, uid uint32, partIndex int
 	return prt, err
 }
 
-func (c *Client) ResolveUid(accountId, dir string, seqnum uint32) (uint32, error) {
+func (c *Client) resolveUid(accountId, dir string, seqnum uint32) (uint32, error) {
 	var uid uint32
 	var err error
 	for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-		uid, err = c.imapConns[accountId].ResolveUid(dir, seqnum)
+		uid, err = c.imapConns[accountId].ResolveUid(c.rawDirName(accountId, dir), seqnum)
 		if err == nil || !connectionError(err) {
 			break
 		}

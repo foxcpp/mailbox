@@ -18,8 +18,6 @@ type GlobalCfg struct {
 	}
 }
 
-var GlobalCfgDefault = GlobalCfg{}
-
 func LoadGlobal() (*GlobalCfg, error) {
 	path := filepath.Join(GetDirectory(), "global.yml")
 	err := os.MkdirAll(GetDirectory(), 0700)

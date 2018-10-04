@@ -10,9 +10,3 @@ to interact with everything (configuration, messages, account data).
 
 - CLI utility (`cli` sub-package)
 - Full-blown GUI application (`gui` sub-package)
-
-### Other sub-packages
-
-- Core API library (that one that should be linked in)  (`api` sub-package)
-
-  Covered by API stability guarantees.

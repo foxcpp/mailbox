@@ -1,3 +1,5 @@
+// core package bundles all lower levers into one solid system. It also contains most of
+// the mailbox client logic and presents interface to upper level (fronend).
 package core
 
 import (
@@ -129,7 +131,7 @@ func Launch(hooks FrontendHooks, userLogOut io.Writer) (*Client, error) {
 
 	for name, info := range accounts {
 		res.debugLog.Println("Setting up account", name+"...")
-		err := res.AddAccount(name, info, false /* write config */)
+		err := res.LoadAccount(name, info)
 		if err != nil {
 			res.SkippedAccounts = append(res.SkippedAccounts, *err)
 		}
@@ -142,8 +144,8 @@ func Launch(hooks FrontendHooks, userLogOut io.Writer) (*Client, error) {
 }
 
 func (c *Client) Stop() {
-	for name, _ := range c.Accounts {
-		c.RemoveAccount(name, false)
+	for name := range c.Accounts {
+		c.UnloadAccount(name)
 	}
 	c.logFile.Close()
 }
@@ -247,9 +249,12 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			c.logger.Printf("New message for account %v in dir %v.\n", accountId, dir)
 			c.debugLog.Printf("New message for account %v in dir %v, sequence number: %v.\n", accountId, dir, seqnum)
 
+			rawDir := dir
+			dir = c.normalizeDirName(accountId, dir)
+
 			// TODO: Measure performance impact of this extract resolve request
 			// and consider exposing seqnum-based operations in imap.Client.
-			uid, err := c.ResolveUid(accountId, dir, seqnum)
+			uid, err := c.resolveUid(accountId, dir, seqnum)
 			if err != nil {
 				c.debugLog.Println("Alert: Reloading message list: failed to download message:", err)
 				c.reloadMaillist(accountId, dir)
@@ -267,7 +272,7 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 
 			var msg *imap.MessageInfo
 			for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-				msg, err = c.imapConns[accountId].FetchPartialMail(dir, uid, imap.TextOnly)
+				msg, err = c.imapConns[accountId].FetchPartialMail(rawDir, uid, imap.TextOnly)
 				if err == nil || !connectionError(err) {
 					break
 				}
@@ -288,8 +293,10 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 			}
 		},
 		MessageRemoved: func(dir string, seqnum uint32) {
-			c.logger.Printf("Message removed from dir %v on account %v.\n", dir, accountId, seqnum)
+			c.logger.Printf("Message removed from dir %v on account %v.\n", dir, accountId)
 			c.debugLog.Printf("Message removed from dir %v on account %v, sequence number: %v.\n", dir, accountId, seqnum)
+
+			dir = c.normalizeDirName(accountId, dir)
 
 			count := c.caches[accountId].Dir(dir).MsgsCount()
 
@@ -315,24 +322,28 @@ func (c *Client) makeUpdateCallbacks(accountId string) *imap.UpdateCallbacks {
 		MessageUpdate: func(dir string, info *eimap.Message) {
 			// Basically, this is only Flags change.
 			if info.Uid != 0 && info.Flags != nil {
-				c.caches[accountId].Dir(dir).ReplaceTagList(info.Uid, info.Flags)
+				c.caches[accountId].Dir(c.normalizeDirName(accountId, dir)).ReplaceTagList(info.Uid, info.Flags)
 			}
 		},
 		MboxUpdate: func(status *eimap.MailboxStatus) {
-			uidv, err := c.caches[accountId].Dir(status.Name).UidValidity()
+			dir := c.normalizeDirName(accountId, status.Name)
+
+			uidv, err := c.caches[accountId].Dir(dir).UidValidity()
 			if err != nil {
 				return
 			}
 			if uidv != status.UidValidity {
 				c.debugLog.Println("UIDVALIDITY changed for dir", status.Name)
 				c.reloadMaillist(accountId, status.Name)
-				c.caches[accountId].Dir(status.Name).SetUidValidity(uidv)
+				c.caches[accountId].Dir(dir).SetUidValidity(uidv)
 			}
-			c.caches[accountId].Dir(status.Name).SetUnreadCount(uint(status.Unseen))
+			c.caches[accountId].Dir(dir).SetUnreadCount(uint(status.Unseen))
 		},
 	}
 }
 
+// prefetchData is called for early data population shortly after
+// account loading.
 func (c *Client) prefetchData(accountId string) error {
 	_, err := c.GetDirs(accountId, true)
 	if err != nil {
@@ -343,7 +354,7 @@ func (c *Client) prefetchData(accountId string) error {
 		var status *imap.DirStatus
 		var err error
 		for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-			status, err = c.imapConns[accountId].Status(dir)
+			status, err = c.imapConns[accountId].Status(c.rawDirName(accountId, dir))
 			if err == nil || !connectionError(err) {
 				break
 			}

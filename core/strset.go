@@ -3,8 +3,8 @@ package core
 type StrSet map[string]bool
 
 func (ss StrSet) List() []string {
-	res := []string{}
-	for k, _ := range ss {
+	var res []string
+	for k := range ss {
 		res = append(res, k)
 	}
 	return res

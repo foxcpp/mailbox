@@ -35,7 +35,7 @@ func (sc SearchCriteria) toGoImap() eimap.SearchCriteria {
 	}
 	if sc.Text != "" {
 		res.Or = [][2]*eimap.SearchCriteria{
-			[2]*eimap.SearchCriteria{
+			{
 				&eimap.SearchCriteria{
 					Header: textproto.MIMEHeader{
 						"Subject": []string{sc.Text},
@@ -68,13 +68,13 @@ func (c *Client) Search(accountId string, criteria SearchCriteria) ([]SearchResu
 		dirsToCheck = allDirs.List()
 	}
 
-	res := []SearchResult{}
+	var res []SearchResult
 
 	for _, dir := range dirsToCheck {
 		var matches []uint32
 		var err error
 		for i := 0; i < *c.GlobalCfg.Connection.MaxTries; i++ {
-			matches, err = c.imapConns[accountId].Search(dir, criteria.toGoImap())
+			matches, err = c.imapConns[accountId].Search(c.rawDirName(accountId, dir), criteria.toGoImap())
 			if err == nil || !connectionError(err) {
 				break
 			}

@@ -6,43 +6,67 @@ import (
 	"github.com/foxcpp/mailbox/storage"
 )
 
-func (c *Client) AddAccount(name string, conf storage.AccountCfg, updateConfig bool) *AccountError {
-	// TODO: Split into AddAccount and LoadAccount.
+// AddAccount creates new account from configuration.
+//
+// LoadAccount should be called manually after AddAccount.
+func (c *Client) AddAccount(name string, conf storage.AccountCfg) {
+	c.debugLog.Println("Writing configuration for account", name+"...")
+	storage.SaveAccount(name, conf)
+}
+
+// LoadAccount initializes all structures requires for operations with this account and
+// opens connection to IMAP server.
+//
+// UnloadAccount is called automatically to clean-up partially initialized account
+// in case of error.
+func (c *Client) LoadAccount(name string, conf storage.AccountCfg) *AccountError {
 	c.Accounts[name] = conf
-
 	c.prepareServerConfig(name)
-
-	err := c.connectToServer(name)
-	if err != nil {
-		return err
-	}
 
 	var dberr error
 	c.caches[name], dberr = storage.OpenCacheDB(filepath.Join(storage.GetDirectory(), "accounts", name+".db"))
 	if dberr != nil {
-		return &AccountError{name, err}
+		c.UnloadAccount(name)
+		return &AccountError{name, dberr}
+	}
+
+	err := c.connectToServer(name)
+	if err != nil {
+		c.UnloadAccount(name)
+		return err
 	}
 	c.prefetchData(name)
-	//c.setSpecialUseDirs()
+	// TODO: c.setSpecialUseDirs()
 
-	if updateConfig {
-		c.debugLog.Println("Writting configuration for account", name+"...")
-		return &AccountError{name, storage.SaveAccount(name, conf)}
-	}
 	return nil
 }
 
-func (c *Client) RemoveAccount(name string, updateConfig bool) error {
-	// TODO: Split into RemoveAccount and UnloadAccount.
-	c.caches[name].Close()
-	delete(c.caches, name)
-	delete(c.Accounts, name)
-	c.imapConns[name].Close()
+// UnloadAccount frees all resources associated with account.
+//
+// After this operation account no longer can be used in any Client methods
+// before corresponding LoadAccount or Client restart.
+func (c *Client) UnloadAccount(name string) {
+	conn := c.imapConns[name]
 	delete(c.imapConns, name)
-
-	if updateConfig {
-		return storage.DeleteAccount(name)
+	if conn != nil {
+		conn.Close()
 	}
 
-	return nil
+	cache := c.caches[name]
+	delete(c.caches, name)
+	if cache != nil {
+		cache.Close()
+	}
+
+	delete(c.Accounts, name)
+	delete(c.serverCfgs, name)
+
+	c.imapDirSep.Delete(name)
+	delete(c.prefetchDirs, name)
+}
+
+// DeleteAccount deletes account from configuration.
+func (c *Client) DeleteAccount(name string) error {
+	c.UnloadAccount(name)
+	return storage.DeleteAccount(name)
 }
