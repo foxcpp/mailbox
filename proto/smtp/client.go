@@ -68,7 +68,7 @@ func Connect(target common.ServConfig) (*Client, error) {
 	conn.SetDeadline(time.Time{})
 	// TODO: Timeout for other I/O.
 
-	return (*Client)(c), nil
+	return (*Client)(c), c.Hello("localhost.localdomain")
 }
 
 // Auth authenticates using specified configuration if possible.
@@ -79,6 +79,8 @@ func (c *Client) Auth(conf common.ServConfig) error {
 			return cl.Auth(sasl.NewPlainClient("", conf.User, conf.Pass))
 		} else if strings.Contains(kinds, "ANONYMOUS") {
 			return cl.Auth(sasl.NewAnonymousClient(""))
+		} else if conf.User == "" {
+			return nil
 		} else {
 			return errors.New("auth: no supported auth method found")
 		}
